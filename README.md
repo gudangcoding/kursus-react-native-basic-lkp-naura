@@ -125,6 +125,7 @@ Semua gambar berada di folder `screenshoot/` dan disematkan di bawah ini:
 
 ![Dashboard Kurir (Daftar)](screenshoot/dashboard%20kurir.png)
 ![Dashboard Kurir (Waypoint)](screenshoot/dashboard%20kurir%20waypoint.png)
+![Kurir Paket](screenshoot/kurir-paket.png)
 
 ### Lainnya
 
