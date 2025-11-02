@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 type Step = 1 | 2 | 3;
 
@@ -57,13 +58,44 @@ export default function OrderKirimBarangWizard() {
       {/* Header Wizard */}
       <View style={styles.header}>
         <Text style={styles.title}>Order Kirim Barang</Text>
-        <View style={styles.stepper}>
-          {[1, 2, 3].map((i) => (
-            <View key={i} style={[styles.stepDot, step === i ? styles.stepDotActive : styles.stepDotInactive]}>
-              <Text style={styles.stepNumber}>{i}</Text>
+        {/* Timeline Wizard dengan ikon */}
+        {(() => {
+          const currentStep = step;
+          const done1 = step > 1; // sudah lewat step 1
+          const done2 = step > 2; // sudah lewat step 2
+          const iconColor1 = done1 ? '#065f46' : (currentStep === 1 ? '#1d4ed8' : '#64748b');
+          const iconColor2 = done2 ? '#065f46' : (currentStep === 2 ? '#1d4ed8' : '#64748b');
+          const iconColor3 = currentStep === 3 ? '#1d4ed8' : (done2 ? '#065f46' : '#64748b');
+          const arrowColor12 = done1 ? '#10b981' : '#9ca3af';
+          const arrowColor23 = done2 ? '#10b981' : '#9ca3af';
+          return (
+            <View style={styles.wizardRow}>
+              {/* Step 1: Alamat & Kategori */}
+              <View style={styles.wizardItem}>
+                <View style={[styles.wizardCircle, currentStep === 1 ? styles.wizardCircleActive : null, done1 ? styles.wizardCircleDone : null]}>
+                  <Ionicons name="location-outline" size={16} color={iconColor1} />
+                </View>
+                <Text style={[styles.wizardLabel, currentStep === 1 ? styles.wizardLabelActive : null, done1 ? styles.wizardLabelDone : null]}>Alamat</Text>
+              </View>
+              <Ionicons name="arrow-forward" size={18} color={arrowColor12} style={styles.wizardArrow} />
+              {/* Step 2: Berat & Volume */}
+              <View style={styles.wizardItem}>
+                <View style={[styles.wizardCircle, currentStep === 2 ? styles.wizardCircleActive : null, done2 ? styles.wizardCircleDone : null]}>
+                  <Ionicons name="cube-outline" size={16} color={iconColor2} />
+                </View>
+                <Text style={[styles.wizardLabel, currentStep === 2 ? styles.wizardLabelActive : null, done2 ? styles.wizardLabelDone : null]}>Berat/Volume</Text>
+              </View>
+              <Ionicons name="arrow-forward" size={18} color={arrowColor23} style={styles.wizardArrow} />
+              {/* Step 3: Konfirmasi */}
+              <View style={styles.wizardItem}>
+                <View style={[styles.wizardCircle, currentStep === 3 ? styles.wizardCircleActive : null]}>
+                  <Ionicons name="checkmark-done-outline" size={16} color={iconColor3} />
+                </View>
+                <Text style={[styles.wizardLabel, currentStep === 3 ? styles.wizardLabelActive : null]}>Konfirmasi</Text>
+              </View>
             </View>
-          ))}
-        </View>
+          );
+        })()}
       </View>
 
       {/* Konten Wizard */}
@@ -166,18 +198,25 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
   header: { paddingTop: 48, paddingHorizontal: 16, paddingBottom: 8 },
   title: { fontSize: 22, fontWeight: '700' },
-  stepper: { flexDirection: 'row', gap: 8, marginTop: 8 },
-  stepDot: {
+  // Timeline wizard styles
+  wizardRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 },
+  wizardItem: { alignItems: 'center', justifyContent: 'center' },
+  wizardCircle: {
     width: 28,
     height: 28,
     borderRadius: 14,
+    borderWidth: 2,
+    borderColor: '#cbd5e1',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
+    backgroundColor: '#ffffff',
   },
-  stepDotActive: { backgroundColor: '#10b981', borderColor: '#10b981' },
-  stepDotInactive: { backgroundColor: '#f9fafb', borderColor: '#e5e7eb' },
-  stepNumber: { color: '#111827', fontWeight: '600' },
+  wizardCircleActive: { borderColor: '#2563eb', backgroundColor: '#eff6ff' },
+  wizardCircleDone: { borderColor: '#10b981', backgroundColor: '#d1fae5' },
+  wizardLabel: { fontSize: 11, marginTop: 4, color: '#64748b', fontWeight: '600' },
+  wizardLabelActive: { color: '#1f2937' },
+  wizardLabelDone: { color: '#064e3b' },
+  wizardArrow: { marginHorizontal: 8 },
   content: { padding: 16 },
   sectionTitle: { fontSize: 16, fontWeight: '700', marginBottom: 12 },
   field: { marginBottom: 12 },

@@ -6,6 +6,9 @@ export default function GojekOrderPage() {
   const [destination, setDestination] = useState('Tujuan');
   const [pickupCoords, setPickupCoords] = useState<{ lat: number; lng: number } | null>({ lat: -6.200000, lng: 106.816666 });
   const [destCoords, setDestCoords] = useState<{ lat: number; lng: number } | null>({ lat: -6.190000, lng: 106.826666 });
+  // Detail barang
+  const [itemDesc, setItemDesc] = useState('');
+  const [itemWeight, setItemWeight] = useState('');
 
   // Autocomplete destinasi
   const [destSuggestions, setDestSuggestions] = useState<Array<{ title: string; lat: number; lng: number }>>([]);
@@ -495,6 +498,7 @@ export default function GojekOrderPage() {
           </TouchableOpacity>
         </View>
 
+
         <View style={styles.field}>
           <Text style={styles.label}>Lokasi Jemput</Text>
           <TextInput
@@ -510,6 +514,28 @@ export default function GojekOrderPage() {
             }}
             placeholder="Masukkan lokasi jemput"
             style={styles.input}
+          />
+        </View>
+
+        {/* Detail Barang */}
+        <View style={styles.field}>
+          <Text style={styles.label}>Deskripsi Barang</Text>
+          <TextInput
+            value={itemDesc}
+            onChangeText={setItemDesc}
+            placeholder="Contoh: Dokumen, pakaian, makanan"
+            style={styles.input}
+          />
+        </View>
+
+        <View style={styles.field}>
+          <Text style={styles.label}>Berat (kg)</Text>
+          <TextInput
+            value={itemWeight}
+            onChangeText={setItemWeight}
+            placeholder="Misal: 1.5"
+            style={styles.input}
+            keyboardType="numeric"
           />
         </View>
 

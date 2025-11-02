@@ -13,6 +13,7 @@ export default function FragmentScreen() {
           { label: 'Gojek Order', icon: 'bicycle', href: '/pages/layout-stack/gojek-order' },
           { label: 'Dashboard Kurir', icon: 'navigate', href: '/pages/layout-stack/dashboard-kurir' },
           { label: 'Kirim Barang', icon: 'cube', href: '/pages/layout-stack/order-kirim' },
+          { label: 'Dashboard Kirim', icon: 'cube', href: '/pages/layout-stack/dashboard-kirim' },
           { label: 'Row', icon: 'swap-horizontal', href: '/pages/layout-flex/row' },
           { label: 'Column', icon: 'swap-vertical', href: '/pages/layout-flex/column' },
           { label: 'Justify', icon: 'ellipsis-horizontal', href: '/pages/layout-flex/justify' },

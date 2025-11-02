@@ -1,5 +1,6 @@
+import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform, Linking } from 'react-native';
+import { Linking, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 type Task = {
   resi: string;
@@ -57,6 +58,57 @@ export default function DashboardKurir() {
 
   const leafletCssHref = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
   const leafletJsSrc = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+
+  // =======================
+  // Segmen 1: Dashboard Kirim Barang (dipindahkan dari dashboard-kirim)
+  // =======================
+  type ShipmentStatus = 'pending' | 'in_transit' | 'delivered';
+  type Shipment = {
+    id: string;
+    date: string; // YYYY-MM-DD
+    origin: string;
+    destination: string;
+    category: string;
+    weightKg: number;
+    volumeM3: number;
+    costIdr: number;
+    status: ShipmentStatus;
+    phone?: string;
+  };
+
+  const SAMPLE_SHIPMENTS: Shipment[] = [
+    { id: 'INV-0001', date: '2025-11-02', origin: 'Jakarta Selatan', destination: 'Depok', category: 'Dokumen', weightKg: 1.2, volumeM3: 0.005, costIdr: 25000, status: 'pending', phone: '6281234560001' },
+    { id: 'INV-0002', date: '2025-11-02', origin: 'Bekasi', destination: 'Jakarta Pusat', category: 'Elektronik', weightKg: 3.5, volumeM3: 0.02, costIdr: 78000, status: 'in_transit', phone: '6281234560002' },
+    { id: 'INV-0003', date: '2025-11-01', origin: 'Tangerang', destination: 'Bogor', category: 'Makanan', weightKg: 2.0, volumeM3: 0.01, costIdr: 52000, status: 'delivered', phone: '6281234560003' },
+    { id: 'INV-0004', date: '2025-11-01', origin: 'Depok', destination: 'Jakarta Timur', category: 'Pakaian', weightKg: 1.8, volumeM3: 0.006, costIdr: 33000, status: 'in_transit', phone: '6281234560004' },
+    { id: 'INV-0005', date: '2025-10-31', origin: 'Jakarta Barat', destination: 'Tangerang', category: 'Aksesoris', weightKg: 0.9, volumeM3: 0.003, costIdr: 21000, status: 'delivered', phone: '6281234560005' },
+  ];
+
+  const formatRupiah = (value: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(value);
+
+  const [shipQuery, setShipQuery] = useState('');
+  const [shipStatusFilter, setShipStatusFilter] = useState<ShipmentStatus | 'all'>('all');
+  const [shipDateFilter, setShipDateFilter] = useState<string>('');
+
+  const filteredShipments = useMemo(() => {
+    return SAMPLE_SHIPMENTS.filter((s) => {
+      const matchesStatus = shipStatusFilter === 'all' ? true : s.status === shipStatusFilter;
+      const matchesQuery = shipQuery.trim().length === 0
+        ? true
+        : [s.id, s.origin, s.destination, s.category].some((t) => t.toLowerCase().includes(shipQuery.toLowerCase()));
+      const matchesDate = shipDateFilter.trim().length === 0 ? true : s.date === shipDateFilter.trim();
+      return matchesStatus && matchesQuery && matchesDate;
+    });
+  }, [shipQuery, shipStatusFilter, shipDateFilter]);
+
+  const shipStats = useMemo(() => {
+    const total = SAMPLE_SHIPMENTS.length;
+    const pending = SAMPLE_SHIPMENTS.filter((s) => s.status === 'pending').length;
+    const inTransit = SAMPLE_SHIPMENTS.filter((s) => s.status === 'in_transit').length;
+    const delivered = SAMPLE_SHIPMENTS.filter((s) => s.status === 'delivered').length;
+    const revenue = SAMPLE_SHIPMENTS.reduce((acc, s) => acc + s.costIdr, 0);
+    return { total, pending, inTransit, delivered, revenue };
+  }, []);
 
   const openWhatsApp = (task: Task) => {
     const message = `Halo, saya kurir untuk ${task.resi}. Alamat: ${task.alamat}`;
@@ -528,26 +580,149 @@ export default function DashboardKurir() {
 
       {segment === 'list' && (
         <ScrollView contentContainerStyle={styles.content}>
-          {sampleTasks.map((task) => (
-            <View key={task.resi} style={styles.card}>
-              <View style={styles.cardRow}>
-                <Text style={styles.cardLabel}>Resi</Text>
-                <Text style={styles.cardValue}>{task.resi}</Text>
-              </View>
-              <View style={styles.cardRow}>
-                <Text style={styles.cardLabel}>Alamat</Text>
-                <Text style={styles.cardValue}>{task.alamat}</Text>
-              </View>
-              <View style={styles.actionsRow}>
-                <TouchableOpacity style={[styles.actionBtn, styles.whatsappBtn]} onPress={() => openWhatsApp(task)}>
-                  <Text style={styles.actionText}>WhatsApp</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.actionBtn, styles.mapsBtn]} onPress={() => openMapForTask(task)}>
-                  <Text style={styles.actionText}>Maps</Text>
-                </TouchableOpacity>
+          {/* Ringkasan Kiriman */}
+          <View style={styles.shipStatsGrid}>
+            <View style={styles.shipStatCard}>
+              <View style={styles.shipStatIconWrap}><Ionicons name="cube-outline" size={20} color="#3b82f6" /></View>
+              <View style={styles.shipStatTexts}>
+                <Text style={styles.shipStatLabel}>Total Kiriman</Text>
+                <Text style={styles.shipStatValue}>{shipStats.total}</Text>
               </View>
             </View>
-          ))}
+            <View style={styles.shipStatCard}>
+              <View style={styles.shipStatIconWrap}><Ionicons name="time-outline" size={20} color="#f59e0b" /></View>
+              <View style={styles.shipStatTexts}>
+                <Text style={styles.shipStatLabel}>Pending</Text>
+                <Text style={styles.shipStatValue}>{shipStats.pending}</Text>
+              </View>
+            </View>
+            <View style={styles.shipStatCard}>
+              <View style={styles.shipStatIconWrap}><Ionicons name="navigate-outline" size={20} color="#06b6d4" /></View>
+              <View style={styles.shipStatTexts}>
+                <Text style={styles.shipStatLabel}>Diantar</Text>
+                <Text style={styles.shipStatValue}>{shipStats.inTransit}</Text>
+              </View>
+            </View>
+            <View style={styles.shipStatCard}>
+              <View style={styles.shipStatIconWrap}><Ionicons name="checkmark-done-outline" size={20} color="#10b981" /></View>
+              <View style={styles.shipStatTexts}>
+                <Text style={styles.shipStatLabel}>Terkirim</Text>
+                <Text style={styles.shipStatValue}>{shipStats.delivered}</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Pendapatan */}
+          <View style={styles.shipRevenueCard}>
+            <View style={styles.shipRevenueIconWrap}><Ionicons name="cash-outline" size={20} color="#22c55e" /></View>
+            <View style={styles.shipRevenueTexts}>
+              <Text style={styles.shipRevenueLabel}>Total Pendapatan (contoh)</Text>
+              <Text style={styles.shipRevenueValue}>{formatRupiah(shipStats.revenue)}</Text>
+            </View>
+          </View>
+
+          {/* Filter dan Pencarian */}
+          <View style={styles.shipFilters}>
+            <View style={styles.shipFilterItem}>
+              <Ionicons name="funnel-outline" size={16} color="#6b7280" />
+              <Text style={styles.shipFilterLabel}>Filter</Text>
+            </View>
+            <View style={styles.shipFiltersRow}>
+              {[
+                { key: 'all', label: 'Semua' },
+                { key: 'pending', label: 'Pending' },
+                { key: 'in_transit', label: 'Diantar' },
+                { key: 'delivered', label: 'Terkirim' },
+              ].map((f) => (
+                <TouchableOpacity
+                  key={f.key}
+                  style={[styles.shipFilterChip, styles.shipFilterChipCol, shipStatusFilter === (f.key as any) ? styles.shipFilterChipActive : styles.shipFilterChipInactive]}
+                  onPress={() => setShipStatusFilter(f.key as any)}
+                >
+                  <Text style={[styles.shipFilterChipText, shipStatusFilter === (f.key as any) ? styles.shipFilterChipTextActive : styles.shipFilterChipTextInactive]}>
+                    {f.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <View style={styles.shipSearchRow}>
+              <View style={styles.shipSearchWrap}>
+                <Ionicons name="search-outline" size={16} color="#6b7280" />
+                <TextInput value={shipQuery} onChangeText={setShipQuery} placeholder="Cari ID/asal/tujuan/kategori" style={styles.shipSearchInput} />
+              </View>
+              <View style={styles.shipDateWrap}>
+                <Ionicons name="calendar-outline" size={16} color="#6b7280" />
+                <TextInput value={shipDateFilter} onChangeText={setShipDateFilter} placeholder="YYYY-MM-DD" style={styles.shipDateInput} />
+              </View>
+            </View>
+          </View>
+
+          {/* Daftar Kiriman */}
+          <View style={styles.shipListWrap}>
+            <Text style={styles.shipListTitle}>Daftar Kiriman</Text>
+            {filteredShipments.length === 0 ? (
+              <Text style={styles.shipEmptyText}>Tidak ada data sesuai filter.</Text>
+            ) : (
+              filteredShipments.map((s) => (
+                <View key={s.id} style={styles.shipCard}>
+                  <View style={styles.shipCardHeader}>
+                    <Text style={styles.shipCardId}>{s.id}</Text>
+                    <View style={[styles.shipBadge, s.status === 'pending' ? styles.shipBadgePending : s.status === 'in_transit' ? styles.shipBadgeTransit : styles.shipBadgeDelivered]}>
+                      <Text style={styles.shipBadgeText}>
+                        {s.status === 'pending' ? 'Pending' : s.status === 'in_transit' ? 'Diantar' : 'Terkirim'}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={styles.shipCardDate}>Tanggal: {s.date}</Text>
+                  <View style={styles.shipRow}>
+                    <View style={styles.shipRowItem}>
+                      <Text style={styles.shipLabel}>Asal</Text>
+                      <Text style={styles.shipValue}>{s.origin}</Text>
+                    </View>
+                    <Ionicons name="arrow-forward" size={16} color="#6b7280" style={styles.shipArrow} />
+                    <View style={styles.shipRowItem}>
+                      <Text style={styles.shipLabel}>Tujuan</Text>
+                      <Text style={styles.shipValue}>{s.destination}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.shipGridRow}>
+                    <View style={styles.shipGridItem}>
+                      <Text style={styles.shipLabel}>Kategori</Text>
+                      <Text style={styles.shipValue}>{s.category}</Text>
+                    </View>
+                    <View style={styles.shipGridItem}>
+                      <Text style={styles.shipLabel}>Berat</Text>
+                      <Text style={styles.shipValue}>{s.weightKg} kg</Text>
+                    </View>
+                    <View style={styles.shipGridItem}>
+                      <Text style={styles.shipLabel}>Volume</Text>
+                      <Text style={styles.shipValue}>{s.volumeM3.toFixed(3)} m³</Text>
+                    </View>
+                    <View style={styles.shipGridItem}>
+                      <Text style={styles.shipLabel}>Biaya</Text>
+                      <Text style={styles.shipValue}>{formatRupiah(s.costIdr)}</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.shipCardActions}>
+                    <TouchableOpacity style={[styles.shipBtn, styles.shipBtnWhatsApp]} onPress={() => openWhatsAppShipment(s)}>
+                      <Ionicons name="logo-whatsapp" size={16} color="#16a34a" />
+                      <Text style={styles.shipBtnWhatsAppText}>WhatsApp</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.shipBtn, styles.shipBtnSecondary]}>
+                      <Ionicons name="information-circle-outline" size={16} color="#111827" />
+                      <Text style={styles.shipBtnSecondaryText}>Detail</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.shipBtn, styles.shipBtnPrimary]}>
+                      <Ionicons name="paper-plane-outline" size={16} color="#fff" />
+                      <Text style={styles.shipBtnPrimaryText}>Proses</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))
+            )}
+          </View>
         </ScrollView>
       )}
 
@@ -717,6 +892,80 @@ const styles = StyleSheet.create({
   segmentInactive: { backgroundColor: '#fff', borderColor: '#e5e7eb' },
   segmentText: { color: '#111827', fontWeight: '700' },
   segmentTextActive: { color: '#fff', fontWeight: '700' },
+  // ====== Styles untuk segmen Dashboard Kirim (prefiks ship*) ======
+  shipStatsGrid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 16, gap: 12, marginTop: 8 },
+  shipStatCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    borderWidth: 1, borderColor: '#e5e7eb', backgroundColor: '#fff', borderRadius: 12,
+    paddingHorizontal: 12, paddingVertical: 10, minWidth: 160, flexGrow: 1,
+  },
+  shipStatIconWrap: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#f1f5f9', alignItems: 'center', justifyContent: 'center' },
+  shipStatTexts: { flex: 1 },
+  shipStatLabel: { color: '#6b7280', fontSize: 12 },
+  shipStatValue: { fontWeight: '700', fontSize: 16, color: '#111827' },
+
+  shipRevenueCard: {
+    marginTop: 10, marginHorizontal: 16,
+    borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, padding: 12, backgroundColor: '#f8fafc',
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+  },
+  shipRevenueIconWrap: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#ecfdf5', alignItems: 'center', justifyContent: 'center' },
+  shipRevenueTexts: { flex: 1 },
+  shipRevenueLabel: { color: '#6b7280', fontSize: 12 },
+  shipRevenueValue: { fontWeight: '700', fontSize: 16, color: '#111827' },
+
+  shipFilters: { marginTop: 12 },
+  shipFilterItem: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, marginBottom: 8 },
+  shipFilterLabel: { color: '#6b7280' },
+  shipFiltersRow: { paddingHorizontal: 16, gap: 8, flexDirection: 'row', flexWrap: 'wrap' },
+  shipFilterChip: { height: 32, paddingHorizontal: 12, borderRadius: 999, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
+  shipFilterChipCol: { width: '48%' },
+  shipFilterChipActive: { borderColor: '#3b82f6', backgroundColor: '#eff6ff' },
+  shipFilterChipInactive: { borderColor: '#e5e7eb', backgroundColor: '#fff' },
+  shipFilterChipText: { fontSize: 12 },
+  shipFilterChipTextActive: { color: '#1d4ed8', fontWeight: '700' },
+  shipFilterChipTextInactive: { color: '#111827' },
+
+  shipSearchRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, marginTop: 8 },
+  shipSearchWrap: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1,
+    height: 40, borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, paddingHorizontal: 10,
+  },
+  shipSearchInput: { flex: 1 },
+  shipDateWrap: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    height: 40, borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, paddingHorizontal: 10, minWidth: 140,
+  },
+  shipDateInput: { flex: 1 },
+
+  shipListWrap: { paddingHorizontal: 16, marginTop: 12 },
+  shipListTitle: { fontWeight: '700', marginBottom: 8 },
+  shipEmptyText: { color: '#6b7280' },
+
+  shipCard: { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, padding: 12, backgroundColor: '#fff', marginBottom: 10 },
+  shipCardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  shipCardId: { fontWeight: '700', color: '#111827' },
+  shipBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999 },
+  shipBadgeText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  shipBadgePending: { backgroundColor: '#f59e0b' },
+  shipBadgeTransit: { backgroundColor: '#06b6d4' },
+  shipBadgeDelivered: { backgroundColor: '#10b981' },
+  shipCardDate: { color: '#6b7280', marginTop: 4 },
+  shipRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
+  shipRowItem: { flex: 1 },
+  shipLabel: { color: '#6b7280', fontSize: 12 },
+  shipValue: { color: '#111827', fontWeight: '600' },
+  shipArrow: { marginHorizontal: 4 },
+  shipGridRow: { flexDirection: 'row', gap: 8, marginTop: 8 },
+  shipGridItem: { flex: 1 },
+  shipCardActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 10 },
+  shipBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 36, borderRadius: 10, paddingHorizontal: 12 },
+  shipBtnPrimary: { backgroundColor: '#2563eb' },
+  shipBtnSecondary: { borderWidth: 1, borderColor: '#e5e7eb', backgroundColor: '#fff' },
+  shipBtnWhatsApp: { borderWidth: 1, borderColor: '#86efac', backgroundColor: '#ecfdf5' },
+  shipBtnPrimaryText: { color: '#fff', fontWeight: '700' },
+  shipBtnSecondaryText: { color: '#111827', fontWeight: '700' },
+  shipBtnWhatsAppText: { color: '#16a34a', fontWeight: '700' },
   mapModal: {
     position: 'absolute',
     left: 0,
@@ -772,3 +1021,9 @@ const styles = StyleSheet.create({
   historyTitle: { fontWeight: '700' },
   historyHint: { color: '#6b7280' },
 });
+  const openWhatsAppShipment = (s: { id: string; origin: string; destination: string; phone?: string }) => {
+    const phone = s.phone ?? '6281234567890';
+    const text = encodeURIComponent(`Halo, ini terkait kiriman ${s.id} dari ${s.origin} ke ${s.destination}.`);
+    const url = `https://wa.me/${phone}?text=${text}`;
+    Linking.openURL(url);
+  };
