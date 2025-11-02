@@ -467,12 +467,12 @@ export default function GojekOrderPage() {
             const dy = e.nativeEvent.pageY - sheetStartYRef.current;
             let next = sheetStartTranslateRef.current + dy;
             if (next < 0) next = 0;
-            if (next > SHEET_MAX) next = SHEET_MAX;
+            if (next > SHEET_HIDE) next = SHEET_HIDE;
             setSheetTranslateY(next);
           }}
           onResponderRelease={() => {
-            // Snap ke titik terdekat: expanded (0), collapsed (SHEET_COLLAPSE), atau hampir bawah (SHEET_MAX)
-            const points = [0, SHEET_COLLAPSE, SHEET_MAX];
+            // Snap ke titik terdekat: expanded (0), collapsed (SHEET_COLLAPSE), hampir bawah (SHEET_MAX), atau hide (SHEET_HIDE)
+            const points = [0, SHEET_COLLAPSE, SHEET_MAX, SHEET_HIDE];
             let snap = points[0];
             let minDiff = Math.abs(sheetTranslateY - points[0]);
             for (let i = 1; i < points.length; i++) {
@@ -484,7 +484,16 @@ export default function GojekOrderPage() {
         >
           <View style={styles.handleBar} />
         </View>
-        <Text style={styles.sheetTitle}>Order Gojek</Text>
+        <View style={styles.sheetHeaderRow}>
+          <Text style={styles.sheetTitle}>Order Gojek</Text>
+          <TouchableOpacity
+            style={styles.sheetCloseBtn}
+            activeOpacity={0.8}
+            onPress={() => setSheetTranslateY(SHEET_HIDE)}
+          >
+            <Text style={styles.sheetCloseText}>Tutup</Text>
+          </TouchableOpacity>
+        </View>
 
         <View style={styles.field}>
           <Text style={styles.label}>Lokasi Jemput</Text>
@@ -594,6 +603,15 @@ export default function GojekOrderPage() {
           <Text style={styles.bookingText}>Booking</Text>
         </TouchableOpacity>
       </View>
+      {sheetTranslateY >= SHEET_HIDE - 1 && (
+        <TouchableOpacity
+          style={styles.openSheetBtn}
+          activeOpacity={0.85}
+          onPress={() => setSheetTranslateY(SHEET_COLLAPSE)}
+        >
+          <Text style={styles.openSheetText}>Buka Sheet</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -645,6 +663,25 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     marginBottom: 8,
+  },
+  sheetHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  sheetCloseBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 8,
+    backgroundColor: '#f8fafc',
+  },
+  sheetCloseText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#334155',
   },
   field: {
     marginBottom: 10,
@@ -755,5 +792,24 @@ const styles = StyleSheet.create({
   },
   trackingTextOff: {
     color: '#334155',
+  },
+  openSheetBtn: {
+    position: 'absolute',
+    left: 16,
+    bottom: 16,
+    backgroundColor: '#111827',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    zIndex: 20,
+  },
+  openSheetText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
   },
 });
