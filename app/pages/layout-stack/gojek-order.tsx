@@ -7,6 +7,11 @@ export default function GojekOrderPage() {
   const [pickupCoords, setPickupCoords] = useState<{ lat: number; lng: number } | null>({ lat: -6.200000, lng: 106.816666 });
   const [destCoords, setDestCoords] = useState<{ lat: number; lng: number } | null>({ lat: -6.190000, lng: 106.826666 });
 
+  // Autocomplete destinasi
+  const [destSuggestions, setDestSuggestions] = useState<Array<{ title: string; lat: number; lng: number }>>([]);
+  const [showDestSuggestions, setShowDestSuggestions] = useState(false);
+  const destDebounceRef = useRef<any>(null);
+
   const mapRef = useRef<any>(null);
   const pickupMarkerRef = useRef<any>(null);
   const destMarkerRef = useRef<any>(null);
@@ -114,6 +119,22 @@ export default function GojekOrderPage() {
     }
   }, []);
 
+  // Gunakan geolokasi perangkat untuk lokasi jemput (akurat)
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof navigator === 'undefined' || !navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        setPickup('Lokasi Perangkat');
+        setPickupCoords(coords);
+      },
+      () => {
+        // Fallback tetap menggunakan default
+      },
+      { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+    );
+  }, []);
+
   // Sinkronisasi posisi marker dan garis rute saat koordinat berubah
   useEffect(() => {
     if (Platform.OS !== 'web') return;
@@ -130,6 +151,10 @@ export default function GojekOrderPage() {
     if (pickupCoords && destCoords) {
       if (routeLineRef.current) {
         routeLineRef.current.setLatLngs([[pickupCoords.lat, pickupCoords.lng], [destCoords.lat, destCoords.lng]]);
+        // Fokus peta ke rute setiap kali koordinat berubah
+        try {
+          mapRef.current.fitBounds(routeLineRef.current.getBounds(), { padding: [20, 20] });
+        } catch {}
       }
     }
   }, [pickupCoords, destCoords]);
@@ -155,8 +180,57 @@ export default function GojekOrderPage() {
     }
   };
 
+  // Autocomplete destinasi: ambil saran dari Nominatim saat mengetik
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    if (destDebounceRef.current) clearTimeout(destDebounceRef.current);
+    const q = (destination || '').trim();
+    if (q.length < 3) {
+      setDestSuggestions([]);
+      setShowDestSuggestions(false);
+      return;
+    }
+    destDebounceRef.current = setTimeout(async () => {
+      try {
+        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5&addressdetails=1`;
+        const res = await fetch(url, { headers: { Accept: 'application/json' } });
+        const json = await res.json();
+        const items: Array<{ title: string; lat: number; lng: number }> = Array.isArray(json)
+          ? json.map((it: any) => ({ title: it.display_name, lat: parseFloat(it.lat), lng: parseFloat(it.lon) }))
+          : [];
+        setDestSuggestions(items);
+        setShowDestSuggestions(items.length > 0);
+      } catch (e) {
+        setDestSuggestions([]);
+        setShowDestSuggestions(false);
+      }
+    }, 350);
+    return () => destDebounceRef.current && clearTimeout(destDebounceRef.current);
+  }, [destination]);
+
+  const selectDestSuggestion = (s: { title: string; lat: number; lng: number }) => {
+    setDestination(s.title);
+    setDestCoords({ lat: s.lat, lng: s.lng });
+    setShowDestSuggestions(false);
+  };
+
   const formatRupiah = (value: number) => {
     return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(value);
+  };
+
+  // Fokuskan peta ke rute (helper)
+  const focusRoute = () => {
+    if (Platform.OS !== 'web') return;
+    try {
+      if (routeLineRef.current && mapRef.current) {
+        mapRef.current.fitBounds(routeLineRef.current.getBounds(), { padding: [20, 20] });
+        return;
+      }
+      // Jika belum ada polyline, minimal fokus ke destinasi
+      if (destCoords && mapRef.current) {
+        mapRef.current.setView([destCoords.lat, destCoords.lng], 14, { animate: true });
+      }
+    } catch {}
   };
 
   return (
@@ -193,15 +267,30 @@ export default function GojekOrderPage() {
             onChangeText={setDestination}
             onBlur={async () => {
               const coords = await geocodeAddress(destination);
-              if (coords) setDestCoords(coords);
+              if (coords) {
+                setDestCoords(coords);
+                setTimeout(focusRoute, 0);
+              }
             }}
             onSubmitEditing={async () => {
               const coords = await geocodeAddress(destination);
-              if (coords) setDestCoords(coords);
+              if (coords) {
+                setDestCoords(coords);
+                setTimeout(focusRoute, 0);
+              }
             }}
             placeholder="Masukkan tujuan"
             style={styles.input}
           />
+          {showDestSuggestions && destSuggestions.length > 0 && (
+            <View style={styles.suggestList}>
+              {destSuggestions.map((s) => (
+                <TouchableOpacity key={`${s.title}-${s.lat}-${s.lng}`} style={styles.suggestItem} onPress={() => { selectDestSuggestion(s); setTimeout(focusRoute, 0); }}>
+                  <Text style={styles.suggestTitle} numberOfLines={2}>{s.title}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
         </View>
 
         <View style={styles.estimatesRow}>
@@ -274,6 +363,25 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 10,
     backgroundColor: '#fff',
+  },
+  suggestList: {
+    marginTop: 6,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 8,
+    backgroundColor: '#fff',
+    overflow: 'hidden',
+  },
+  suggestItem: {
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
+  suggestTitle: {
+    color: '#111827',
+    fontSize: 13,
+    fontWeight: '600',
   },
   estimatesRow: {
     flexDirection: 'row',
