@@ -5,6 +5,7 @@ type Task = {
   resi: string;
   alamat: string;
   phone?: string;
+  date?: string; // YYYY-MM-DD untuk riwayat
 };
 
 const sampleTasks: Task[] = [
@@ -13,14 +14,26 @@ const sampleTasks: Task[] = [
   { resi: 'RESI-001236', alamat: 'Blok M Plaza, Jakarta Selatan' },
 ];
 
+// Data riwayat tugas (contoh) dengan tanggal selesai
+const taskHistory: Task[] = [
+  { resi: 'RESI-000999', alamat: 'Stasiun Gambir, Jakarta Pusat', phone: '+628111111111', date: '2025-11-01' },
+  { resi: 'RESI-000998', alamat: 'Pasar Senen, Jakarta Pusat', date: '2025-11-01' },
+  { resi: 'RESI-000997', alamat: 'PIK Avenue, Jakarta Utara', date: '2025-10-31' },
+  { resi: 'RESI-000996', alamat: 'Kemang Village, Jakarta Selatan', date: '2025-10-31' },
+];
+
 export default function DashboardKurir() {
   const [selected, setSelected] = useState<Task | null>(null);
   const [showMap, setShowMap] = useState(false);
   const [origin, setOrigin] = useState<{ lat: number; lng: number } | null>(null);
   const [destination, setDestination] = useState<{ lat: number; lng: number } | null>(null);
 
-  // Segmented view: 'list' | 'waypoint'
-  const [segment, setSegment] = useState<'list' | 'waypoint'>('list');
+  // Segmented view: 'list' | 'waypoint' | 'history'
+  const [segment, setSegment] = useState<'list' | 'waypoint' | 'history'>('list');
+
+  // Riwayat: filter tanggal (default hari ini)
+  const [historyDate, setHistoryDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const filteredHistory = useMemo(() => taskHistory.filter((t) => t.date === historyDate), [historyDate]);
 
   // TSP map refs
   const tspMapRef = useRef<any>(null);
@@ -28,6 +41,16 @@ export default function DashboardKurir() {
   const tspMarkersRef = useRef<any[]>([]);
   const [tspOrder, setTspOrder] = useState<number[]>([]); // indices of sampleTasks in visit order
   const [isComputingTsp, setIsComputingTsp] = useState(false);
+
+  // Waypoint tracking & follow route
+  const [tspTrackingEnabled, setTspTrackingEnabled] = useState(false);
+  const tspWatchIdRef = useRef<any>(null);
+  const tspDeviceMarkerRef = useRef<any>(null);
+  const [tspFollowEnabled, setTspFollowEnabled] = useState(false);
+  const tspFollowTimerRef = useRef<any>(null);
+  const tspFollowIdxRef = useRef<number>(0);
+  const tspRouteLatLngsRef = useRef<[number, number][]>([]);
+  const tspFollowerMarkerRef = useRef<any>(null);
 
   const mapRef = useRef<any>(null);
   const routeLineRef = useRef<any>(null);
@@ -177,6 +200,49 @@ export default function DashboardKurir() {
     }
   };
 
+  // OSRM helper: route per segmen (from -> to) menghasilkan latlngs [lat, lng]
+  const fetchOsrmRouteLatLngs = async (from: { lat: number; lng: number }, to: { lat: number; lng: number }) => {
+    try {
+      const url = `https://router.project-osrm.org/route/v1/driving/${from.lng},${from.lat};${to.lng},${to.lat}?overview=full&geometries=geojson&alternatives=false&steps=false`;
+      const res = await fetch(url, { headers: { Accept: 'application/json' } });
+      if (!res.ok) return null;
+      const json = await res.json();
+      const coords: Array<[number, number]> | undefined = json?.routes?.[0]?.geometry?.coordinates;
+      if (!coords || coords.length === 0) return null;
+      return coords.map(([lng, lat]) => [lat, lng] as [number, number]);
+    } catch {
+      return null;
+    }
+  };
+
+  // Bangun polyline jalan untuk path: [p0, p1, ..., pn] dengan memanggil OSRM tiap segmen
+  const buildRoadPolylineForPath = async (points: { lat: number; lng: number }[]) => {
+    const out: [number, number][] = [];
+    for (let i = 0; i < points.length - 1; i++) {
+      const a = points[i];
+      const b = points[i + 1];
+      const seg = await fetchOsrmRouteLatLngs(a, b);
+      if (seg && seg.length > 1) {
+        // Hindari duplikasi titik sambungan
+        if (out.length > 0) {
+          const last = out[out.length - 1];
+          const first = seg[0];
+          if (last[0] === first[0] && last[1] === first[1]) {
+            out.push(...seg.slice(1));
+          } else {
+            out.push(...seg);
+          }
+        } else {
+          out.push(...seg);
+        }
+      } else {
+        // Fallback: garis lurus untuk segmen ini
+        out.push([a.lat, a.lng], [b.lat, b.lng]);
+      }
+    }
+    return out;
+  };
+
   // Init TSP map when segment switched to 'waypoint'
   useEffect(() => {
     if (segment !== 'waypoint' || Platform.OS !== 'web') return;
@@ -274,14 +340,13 @@ export default function DashboardKurir() {
         }
       }
 
-      // 6) Prepare polyline latlngs
+      // 6) Prepare polyline latlngs: gunakan OSRM Trip geometry jika ada, jika tidak, bangun per segmen
       let latlngs: Array<[number, number]> | null = null;
       if (json?.trips?.[0]?.geometry?.coordinates) {
         latlngs = json.trips[0].geometry.coordinates.map(([lng, lat]: [number, number]) => [lat, lng]);
       } else {
-        // Straight lines along fallback path: start -> tasks in order
         const path = [start, ...order.map((i) => taskCoords[i])];
-        latlngs = path.map((c) => [c.lat, c.lng]);
+        latlngs = await buildRoadPolylineForPath(path);
       }
 
       // 7) Draw polyline (always attempt even if OSRM geometry missing)
@@ -291,7 +356,11 @@ export default function DashboardKurir() {
         } else {
           tspPolylineRef.current = L.polyline(latlngs, { color: '#7c3aed', weight: 5 }).addTo(tspMapRef.current);
         }
+        // cache route latlngs for follow animation
+        tspRouteLatLngsRef.current = latlngs as [number, number][];
         tspMapRef.current.fitBounds(tspPolylineRef.current.getBounds(), { padding: [20, 20] });
+        // restart follow if enabled
+        if (tspFollowEnabled) restartTspFollow();
       }
 
       // 8) Markers and labels
@@ -323,6 +392,101 @@ export default function DashboardKurir() {
     }
   };
 
+  // Follow Route helpers for Waypoint
+  const stopTspFollow = () => {
+    if (tspFollowTimerRef.current) {
+      clearInterval(tspFollowTimerRef.current);
+      tspFollowTimerRef.current = null;
+    }
+    const L = (window as any).L;
+    if (tspFollowerMarkerRef.current && tspMapRef.current && L) {
+      try { tspMapRef.current.removeLayer(tspFollowerMarkerRef.current); } catch {}
+      tspFollowerMarkerRef.current = null;
+    }
+  };
+
+  const restartTspFollow = () => {
+    stopTspFollow();
+    if (!tspFollowEnabled) return;
+    const L = (window as any).L;
+    if (!tspMapRef.current || !L) return;
+    const coords = tspRouteLatLngsRef.current;
+    if (!coords || coords.length === 0) return;
+    const step = coords.length > 500 ? 5 : 1;
+    const path = coords.filter((_, i) => i % step === 0);
+    tspFollowIdxRef.current = 0;
+    tspFollowerMarkerRef.current = L.circleMarker(path[0], {
+      radius: 6,
+      color: '#2563eb',
+      weight: 3,
+      fillColor: '#2563eb',
+      fillOpacity: 0.8,
+    }).addTo(tspMapRef.current);
+    tspFollowTimerRef.current = setInterval(() => {
+      tspFollowIdxRef.current += 1;
+      if (tspFollowIdxRef.current >= path.length) {
+        stopTspFollow();
+        return;
+      }
+      const next = path[tspFollowIdxRef.current];
+      try { tspFollowerMarkerRef.current.setLatLng(next); } catch {}
+      try { tspMapRef.current.panTo(next, { animate: true }); } catch {}
+    }, 300);
+  };
+
+  // Real-time tracking for Waypoint map
+  useEffect(() => {
+    if (segment !== 'waypoint' || Platform.OS !== 'web') return;
+    if (!tspTrackingEnabled) {
+      if (tspWatchIdRef.current != null) {
+        try { navigator.geolocation.clearWatch(tspWatchIdRef.current); } catch {}
+        tspWatchIdRef.current = null;
+      }
+      return;
+    }
+    if (!navigator.geolocation) return;
+    try {
+      tspWatchIdRef.current = navigator.geolocation.watchPosition(
+        (pos) => {
+          const L = (window as any).L;
+          if (!L || !tspMapRef.current) return;
+          const latlng = [pos.coords.latitude, pos.coords.longitude] as [number, number];
+          try {
+            if (tspDeviceMarkerRef.current) {
+              tspDeviceMarkerRef.current.setLatLng(latlng);
+            } else {
+              tspDeviceMarkerRef.current = L.circleMarker(latlng, {
+                radius: 6,
+                color: '#0ea5e9',
+                weight: 3,
+                fillColor: '#0ea5e9',
+                fillOpacity: 0.8,
+              }).addTo(tspMapRef.current);
+              tspDeviceMarkerRef.current.bindPopup('Perangkat');
+            }
+            tspMapRef.current.setView(latlng, tspMapRef.current.getZoom(), { animate: true });
+          } catch {}
+        },
+        () => {},
+        { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
+      );
+    } catch {}
+    return () => {
+      if (tspWatchIdRef.current != null) {
+        try { navigator.geolocation.clearWatch(tspWatchIdRef.current); } catch {}
+        tspWatchIdRef.current = null;
+      }
+    };
+  }, [segment, tspTrackingEnabled]);
+
+  // Avoid conflicts: turning on tracking disables follow route
+  useEffect(() => {
+    if (tspTrackingEnabled && tspFollowEnabled) {
+      setTspFollowEnabled(false);
+      stopTspFollow();
+    }
+  }, [tspTrackingEnabled]);
+
   // Auto compute when segment visible
   useEffect(() => {
     if (segment !== 'waypoint' || Platform.OS !== 'web') return;
@@ -353,6 +517,12 @@ export default function DashboardKurir() {
           onPress={() => setSegment('waypoint')}
         >
           <Text style={segment === 'waypoint' ? styles.segmentTextActive : styles.segmentText}>Waypoint</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.segmentBtn, segment === 'history' ? styles.segmentActive : styles.segmentInactive]}
+          onPress={() => setSegment('history')}
+        >
+          <Text style={segment === 'history' ? styles.segmentTextActive : styles.segmentText}>Riwayat</Text>
         </TouchableOpacity>
       </View>
 
@@ -388,6 +558,33 @@ export default function DashboardKurir() {
             <TouchableOpacity style={styles.refreshBtn} onPress={computeTspRoute} disabled={isComputingTsp}>
               <Text style={styles.refreshText}>{isComputingTsp ? 'Menghitung…' : 'Hitung Ulang'}</Text>
             </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.toggleBtn, tspTrackingEnabled ? styles.toggleOn : styles.toggleOff]}
+              onPress={() => setTspTrackingEnabled((v) => !v)}
+            >
+              <Text style={[styles.toggleText, tspTrackingEnabled ? styles.toggleTextOn : styles.toggleTextOff]}>
+                {tspTrackingEnabled ? 'Tracking: ON' : 'Tracking: OFF'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.toggleBtn, tspFollowEnabled ? styles.toggleOn : styles.toggleOff]}
+              onPress={() => {
+                setTspFollowEnabled((v) => {
+                  const next = !v;
+                  if (next) {
+                    if (tspTrackingEnabled) setTspTrackingEnabled(false);
+                    restartTspFollow();
+                  } else {
+                    stopTspFollow();
+                  }
+                  return next;
+                });
+              }}
+            >
+              <Text style={[styles.toggleText, tspFollowEnabled ? styles.toggleTextOn : styles.toggleTextOff]}>
+                {tspFollowEnabled ? 'Follow Route: ON' : 'Follow Route: OFF'}
+              </Text>
+            </TouchableOpacity>
           </View>
           <View nativeID="leaflet-map-tsp" style={styles.tspMap} />
           <View style={styles.tspOrderWrap}>
@@ -403,6 +600,64 @@ export default function DashboardKurir() {
               ))
             )}
           </View>
+        </View>
+      )}
+
+      {segment === 'history' && (
+        <View style={styles.historyContainer}>
+          <View style={styles.historyHeader}>
+            <Text style={styles.historyTitle}>Riwayat Tugas</Text>
+            {Platform.OS === 'web' ? (
+              // Input HTML untuk tanggal (Web only)
+              React.createElement('input', {
+                type: 'date',
+                value: historyDate,
+                onChange: (e: any) => setHistoryDate(e.target.value),
+                style: {
+                  height: 32,
+                  paddingLeft: 10,
+                  paddingRight: 10,
+                  borderRadius: 8,
+                  borderWidth: 1,
+                  borderStyle: 'solid',
+                  borderColor: '#e5e7eb',
+                  outline: 'none',
+                } as any,
+              })
+            ) : (
+              <Text style={styles.historyHint}>Filter tanggal tersedia di Web</Text>
+            )}
+          </View>
+          <ScrollView contentContainerStyle={styles.content}>
+            {filteredHistory.length === 0 ? (
+              <Text style={styles.tspOrderEmpty}>Tidak ada tugas untuk tanggal ini.</Text>
+            ) : (
+              filteredHistory.map((task) => (
+                <View key={`${task.resi}-${task.date}`} style={styles.card}>
+                  <View style={styles.cardRow}>
+                    <Text style={styles.cardLabel}>Resi</Text>
+                    <Text style={styles.cardValue}>{task.resi}</Text>
+                  </View>
+                  <View style={styles.cardRow}>
+                    <Text style={styles.cardLabel}>Tanggal</Text>
+                    <Text style={styles.cardValue}>{task.date}</Text>
+                  </View>
+                  <View style={styles.cardRow}>
+                    <Text style={styles.cardLabel}>Alamat</Text>
+                    <Text style={styles.cardValue}>{task.alamat}</Text>
+                  </View>
+                  <View style={styles.actionsRow}>
+                    <TouchableOpacity style={[styles.actionBtn, styles.whatsappBtn]} onPress={() => openWhatsApp(task)}>
+                      <Text style={styles.actionText}>WhatsApp</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.actionBtn, styles.mapsBtn]} onPress={() => openMapForTask(task)}>
+                      <Text style={styles.actionText}>Maps</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))
+            )}
+          </ScrollView>
         </View>
       )}
 
@@ -489,6 +744,21 @@ const styles = StyleSheet.create({
   tspTitle: { fontWeight: '700' },
   refreshBtn: { backgroundColor: '#2563eb', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 },
   refreshText: { color: '#fff', fontWeight: '700' },
+  toggleBtn: {
+    height: 32,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+  },
+  toggleOn: { backgroundColor: '#ecfeff', borderColor: '#06b6d4' },
+  toggleOff: { backgroundColor: '#f8fafc' },
+  toggleText: { fontSize: 12, fontWeight: '700' },
+  toggleTextOn: { color: '#0e7490' },
+  toggleTextOff: { color: '#334155' },
   tspMap: { height: 320, marginHorizontal: 16, borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: '#e5e7eb' },
   tspOrderWrap: { paddingHorizontal: 16, paddingTop: 10 },
   tspOrderTitle: { fontWeight: '700', marginBottom: 6 },
@@ -496,4 +766,9 @@ const styles = StyleSheet.create({
   tspOrderRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
   tspOrderBadge: { backgroundColor: '#111827', color: '#fff', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, marginRight: 10 },
   tspOrderText: { color: '#111827', fontWeight: '600' },
+  // Riwayat styles
+  historyContainer: { flex: 1 },
+  historyHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingBottom: 8 },
+  historyTitle: { fontWeight: '700' },
+  historyHint: { color: '#6b7280' },
 });

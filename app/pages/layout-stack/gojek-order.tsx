@@ -16,6 +16,27 @@ export default function GojekOrderPage() {
   const pickupMarkerRef = useRef<any>(null);
   const destMarkerRef = useRef<any>(null);
   const routeLineRef = useRef<any>(null);
+  const watchIdRef = useRef<any>(null);
+  const lastReverseTsRef = useRef<number>(0);
+  const [trackingEnabled, setTrackingEnabled] = useState(false);
+  const [followRouteEnabled, setFollowRouteEnabled] = useState(false);
+  const routeCoordsRef = useRef<[number, number][]>([]);
+  const followTimerRef = useRef<any>(null);
+  const followIdxRef = useRef<number>(0);
+  const routeFollowerMarkerRef = useRef<any>(null);
+
+  // Draggable bottom sheet state
+  const [sheetTranslateY, setSheetTranslateY] = useState(0); // 0 = expanded
+  const sheetStartYRef = useRef(0);
+  const sheetStartTranslateRef = useRef(0);
+  // Snap points untuk bottom sheet: expanded (0), collapsed (peek), dan hampir ke bawah
+  const SHEET_COLLAPSE = 300; // px saat collapsed (peek)
+  const SHEET_MAX = Platform.OS === 'web' && typeof window !== 'undefined'
+    ? Math.min(Math.max(Math.floor((window as any).innerHeight * 0.7), 420), 720)
+    : 420; // batas bawah (lebih besar agar bisa ditarik jauh)
+  const SHEET_HIDE = Platform.OS === 'web' && typeof window !== 'undefined'
+    ? Math.max( (window as any).innerHeight - 60, SHEET_MAX + 60 )
+    : SHEET_MAX + 80; // mentok bawah (hampir di luar layar)
 
   // Haversine distance (km)
   const haversineKm = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) => {
@@ -30,6 +51,72 @@ export default function GojekOrderPage() {
       Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
     const c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
     return R * c;
+  };
+
+  // Reverse geocoding: koordinat -> alamat (display_name)
+  const reverseGeocode = async (c: { lat: number; lng: number }) => {
+    try {
+      if (Platform.OS !== 'web') return null;
+      const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${c.lat}&lon=${c.lng}`;
+      const res = await fetch(url, { headers: { Accept: 'application/json' } });
+      const json = await res.json();
+      const name = json?.display_name || null;
+      return name;
+    } catch (e) {
+      return null;
+    }
+  };
+
+  // Ambil rute jalan dari OSRM Route API (di dalam komponen agar akses mapRef & state)
+  const fetchOsrmRoute = async (from: { lat: number; lng: number }, to: { lat: number; lng: number }) => {
+    try {
+      if (Platform.OS !== 'web') return null;
+      const url = `https://router.project-osrm.org/route/v1/driving/${from.lng},${from.lat};${to.lng},${to.lat}?overview=full&geometries=geojson&alternatives=false&steps=false`;
+      const res = await fetch(url, { headers: { Accept: 'application/json' } });
+      if (!res.ok) return null;
+      const json = await res.json();
+      const route = json?.routes?.[0];
+      const coords: Array<[number, number]> = route?.geometry?.coordinates || [];
+      if (!coords || coords.length === 0) return null;
+      // Convert [lon, lat] -> [lat, lon]
+      const latlngs = coords.map((c: [number, number]) => [c[1], c[0]] as [number, number]);
+      return latlngs;
+    } catch (e) {
+      return null;
+    }
+  };
+
+  // Update polyline rute: coba OSRM, fallback ke garis lurus
+  const updateRoadRoute = async () => {
+    if (Platform.OS !== 'web') return;
+    const L = (window as any).L;
+    if (!L || !mapRef.current || !pickupCoords || !destCoords) return;
+    try {
+      const latlngs = await fetchOsrmRoute(pickupCoords, destCoords);
+      if (routeLineRef.current) {
+        if (latlngs && latlngs.length > 1) {
+          routeLineRef.current.setLatLngs(latlngs);
+          routeCoordsRef.current = latlngs;
+        } else {
+          const straight = [[pickupCoords.lat, pickupCoords.lng], [destCoords.lat, destCoords.lng]] as [number, number][];
+          routeLineRef.current.setLatLngs(straight);
+          routeCoordsRef.current = straight;
+        }
+        try { mapRef.current.fitBounds(routeLineRef.current.getBounds(), { padding: [20, 20] }); } catch {}
+        if (followRouteEnabled) {
+          restartFollowRoute();
+        }
+      } else {
+        const initial = latlngs && latlngs.length > 1 ? latlngs : [[pickupCoords.lat, pickupCoords.lng], [destCoords.lat, destCoords.lng]];
+        const line = L.polyline(initial, { color: '#10b981', weight: 4 }).addTo(mapRef.current);
+        routeLineRef.current = line;
+        routeCoordsRef.current = initial as [number, number][];
+        try { mapRef.current.fitBounds(line.getBounds(), { padding: [20, 20] }); } catch {}
+        if (followRouteEnabled) {
+          restartFollowRoute();
+        }
+      }
+    } catch {}
   };
 
   // Estimasi jarak dan harga real berdasarkan koordinat
@@ -80,7 +167,12 @@ export default function GojekOrderPage() {
       pick.bindPopup('Lokasi Jemput');
       pick.on('dragend', () => {
         const ll = pick.getLatLng();
-        setPickupCoords({ lat: ll.lat, lng: ll.lng });
+        const coords = { lat: ll.lat, lng: ll.lng };
+        setPickupCoords(coords);
+        // Update alamat input dengan reverse geocoding
+        reverseGeocode(coords).then((addr) => {
+          if (addr) setPickup(addr);
+        });
       });
 
       // Destination marker (draggable)
@@ -88,7 +180,15 @@ export default function GojekOrderPage() {
       dest.bindPopup('Tujuan');
       dest.on('dragend', () => {
         const ll = dest.getLatLng();
-        setDestCoords({ lat: ll.lat, lng: ll.lng });
+        const coords = { lat: ll.lat, lng: ll.lng };
+        setDestCoords(coords);
+        // Update alamat input dengan reverse geocoding dan fokuskan rute
+        reverseGeocode(coords).then((addr) => {
+          if (addr) setDestination(addr);
+          setTimeout(() => {
+            try { if (routeLineRef.current && mapRef.current) mapRef.current.fitBounds(routeLineRef.current.getBounds(), { padding: [20, 20] }); } catch {}
+          }, 0);
+        });
       });
 
       // Simpan referensi
@@ -98,13 +198,18 @@ export default function GojekOrderPage() {
       pickupMarkerRef.current = pick;
       destMarkerRef.current = dest;
 
-      // Gambar rute awal
-      const line = L.polyline([[pickupCoords!.lat, pickupCoords!.lng], [destCoords!.lat, destCoords!.lng]], {
-        color: '#10b981',
-        weight: 4,
-      }).addTo(map);
-      routeLineRef.current = line;
-      map.fitBounds(line.getBounds(), { padding: [20, 20] });
+      // Gambar rute awal (coba rute jalan)
+      (async () => {
+        const latlngs = await fetchOsrmRoute(pickupCoords!, destCoords!);
+        const initial = latlngs && latlngs.length > 1 ? latlngs : [[pickupCoords!.lat, pickupCoords!.lng], [destCoords!.lat, destCoords!.lng]];
+        const line = L.polyline(initial, { color: '#10b981', weight: 4 }).addTo(map);
+        routeLineRef.current = line;
+        routeCoordsRef.current = initial as [number, number][];
+        try { map.fitBounds(line.getBounds(), { padding: [20, 20] }); } catch {}
+        if (followRouteEnabled) {
+          restartFollowRoute();
+        }
+      })();
     };
 
     const existingScript = document.querySelector(`script[src="${leafletJsSrc}"]`);
@@ -127,6 +232,10 @@ export default function GojekOrderPage() {
         const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         setPickup('Lokasi Perangkat');
         setPickupCoords(coords);
+        // Tampilkan alamat hasil reverse geocoding dari lokasi perangkat
+        reverseGeocode(coords).then((addr) => {
+          if (addr) setPickup(addr);
+        });
       },
       () => {
         // Fallback tetap menggunakan default
@@ -134,6 +243,49 @@ export default function GojekOrderPage() {
       { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
     );
   }, []);
+
+  // Tracking realtime: aktifkan watchPosition bila trackingEnabled = true
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof navigator === 'undefined' || !navigator.geolocation) return;
+    if (!trackingEnabled) {
+      // Matikan watch bila sebelumnya aktif
+      if (watchIdRef.current != null) {
+        try { navigator.geolocation.clearWatch(watchIdRef.current); } catch {}
+        watchIdRef.current = null;
+      }
+      return;
+    }
+    // Aktifkan watchPosition
+    try {
+      watchIdRef.current = navigator.geolocation.watchPosition(
+        (pos) => {
+          const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          setPickupCoords(coords);
+          // Ikuti marker di peta (follow)
+          try {
+            if (mapRef.current) {
+              mapRef.current.setView([coords.lat, coords.lng], mapRef.current.getZoom(), { animate: true });
+            }
+          } catch {}
+          // Perbarui alamat jemput dengan throttle (maks 1x per 5 detik)
+          const now = Date.now();
+          if (now - (lastReverseTsRef.current || 0) > 5000) {
+            lastReverseTsRef.current = now;
+            reverseGeocode(coords).then((addr) => { if (addr) setPickup(addr); });
+          }
+        },
+        () => {},
+        { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
+      );
+    } catch {}
+    // Cleanup saat unmount atau saat toggle berubah
+    return () => {
+      if (watchIdRef.current != null) {
+        try { navigator.geolocation.clearWatch(watchIdRef.current); } catch {}
+        watchIdRef.current = null;
+      }
+    };
+  }, [trackingEnabled]);
 
   // Sinkronisasi posisi marker dan garis rute saat koordinat berubah
   useEffect(() => {
@@ -149,13 +301,7 @@ export default function GojekOrderPage() {
     }
 
     if (pickupCoords && destCoords) {
-      if (routeLineRef.current) {
-        routeLineRef.current.setLatLngs([[pickupCoords.lat, pickupCoords.lng], [destCoords.lat, destCoords.lng]]);
-        // Fokus peta ke rute setiap kali koordinat berubah
-        try {
-          mapRef.current.fitBounds(routeLineRef.current.getBounds(), { padding: [20, 20] });
-        } catch {}
-      }
+      updateRoadRoute();
     }
   }, [pickupCoords, destCoords]);
 
@@ -185,7 +331,8 @@ export default function GojekOrderPage() {
     if (Platform.OS !== 'web') return;
     if (destDebounceRef.current) clearTimeout(destDebounceRef.current);
     const q = (destination || '').trim();
-    if (q.length < 3) {
+    // Minimal 5 huruf sebelum memunculkan saran
+    if (q.length < 5) {
       setDestSuggestions([]);
       setShowDestSuggestions(false);
       return;
@@ -209,9 +356,25 @@ export default function GojekOrderPage() {
   }, [destination]);
 
   const selectDestSuggestion = (s: { title: string; lat: number; lng: number }) => {
-    setDestination(s.title);
-    setDestCoords({ lat: s.lat, lng: s.lng });
-    setShowDestSuggestions(false);
+    try {
+      // Tutup daftar saran dan hentikan debounce yang masih jalan
+      if (destDebounceRef.current) {
+        clearTimeout(destDebounceRef.current);
+        destDebounceRef.current = null;
+      }
+      setShowDestSuggestions(false);
+      setDestSuggestions([]);
+
+      // Set tujuan dan koordinatnya
+      setDestination(s.title);
+      setDestCoords({ lat: s.lat, lng: s.lng });
+
+      // Setelah state ter-update, fokuskan peta dan perbarui rute jalan
+      setTimeout(() => {
+        updateRoadRoute();
+        focusRoute();
+      }, 0);
+    } catch {}
   };
 
   const formatRupiah = (value: number) => {
@@ -233,13 +396,94 @@ export default function GojekOrderPage() {
     } catch {}
   };
 
+  // Follow Route helpers
+  const stopFollowRoute = () => {
+    if (followTimerRef.current) {
+      clearInterval(followTimerRef.current);
+      followTimerRef.current = null;
+    }
+    const L = (window as any).L;
+    if (routeFollowerMarkerRef.current && mapRef.current && L) {
+      try { mapRef.current.removeLayer(routeFollowerMarkerRef.current); } catch {}
+      routeFollowerMarkerRef.current = null;
+    }
+  };
+
+  const restartFollowRoute = () => {
+    stopFollowRoute();
+    if (!followRouteEnabled) return;
+    const L = (window as any).L;
+    if (!mapRef.current || !L) return;
+    const coords = routeCoordsRef.current;
+    if (!coords || coords.length === 0) return;
+    const step = coords.length > 500 ? 5 : 1;
+    const path = coords.filter((_, i) => i % step === 0);
+    followIdxRef.current = 0;
+    routeFollowerMarkerRef.current = L.circleMarker(path[0], {
+      radius: 6,
+      color: '#2563eb',
+      weight: 3,
+      fillColor: '#2563eb',
+      fillOpacity: 0.8,
+    }).addTo(mapRef.current);
+    followTimerRef.current = setInterval(() => {
+      followIdxRef.current += 1;
+      if (followIdxRef.current >= path.length) {
+        stopFollowRoute();
+        return;
+      }
+      const next = path[followIdxRef.current];
+      try { routeFollowerMarkerRef.current.setLatLng(next); } catch {}
+      try { mapRef.current.panTo(next, { animate: true }); } catch {}
+    }, 300);
+  };
+
+  // Jika tracking diaktifkan, matikan follow route agar tidak konflik
+  useEffect(() => {
+    if (trackingEnabled && followRouteEnabled) {
+      setFollowRouteEnabled(false);
+      stopFollowRoute();
+    }
+  }, [trackingEnabled]);
+
   return (
     <View style={styles.container}>
       {/* Peta full-screen di belakang */}
       <View style={styles.map} nativeID="leaflet-map" />
 
       {/* Bottom sheet fixed berisi form, estimasi, dan tombol booking */}
-      <View style={styles.bottomSheet}>
+      <View
+        style={[styles.bottomSheet, { transform: [{ translateY: sheetTranslateY }] }]}
+      >
+        {/* Drag handle */}
+        <View
+          style={styles.dragHandle}
+          onStartShouldSetResponder={() => true}
+          onResponderGrant={(e: any) => {
+            sheetStartYRef.current = e.nativeEvent.pageY;
+            sheetStartTranslateRef.current = sheetTranslateY;
+          }}
+          onResponderMove={(e: any) => {
+            const dy = e.nativeEvent.pageY - sheetStartYRef.current;
+            let next = sheetStartTranslateRef.current + dy;
+            if (next < 0) next = 0;
+            if (next > SHEET_MAX) next = SHEET_MAX;
+            setSheetTranslateY(next);
+          }}
+          onResponderRelease={() => {
+            // Snap ke titik terdekat: expanded (0), collapsed (SHEET_COLLAPSE), atau hampir bawah (SHEET_MAX)
+            const points = [0, SHEET_COLLAPSE, SHEET_MAX];
+            let snap = points[0];
+            let minDiff = Math.abs(sheetTranslateY - points[0]);
+            for (let i = 1; i < points.length; i++) {
+              const d = Math.abs(sheetTranslateY - points[i]);
+              if (d < minDiff) { minDiff = d; snap = points[i]; }
+            }
+            setSheetTranslateY(snap);
+          }}
+        >
+          <View style={styles.handleBar} />
+        </View>
         <Text style={styles.sheetTitle}>Order Gojek</Text>
 
         <View style={styles.field}>
@@ -285,7 +529,7 @@ export default function GojekOrderPage() {
           {showDestSuggestions && destSuggestions.length > 0 && (
             <View style={styles.suggestList}>
               {destSuggestions.map((s) => (
-                <TouchableOpacity key={`${s.title}-${s.lat}-${s.lng}`} style={styles.suggestItem} onPress={() => { selectDestSuggestion(s); setTimeout(focusRoute, 0); }}>
+                <TouchableOpacity key={`${s.title}-${s.lat}-${s.lng}`} style={styles.suggestItem} onPress={() => { selectDestSuggestion(s); }}>
                   <Text style={styles.suggestTitle} numberOfLines={2}>{s.title}</Text>
                 </TouchableOpacity>
               ))}
@@ -305,7 +549,48 @@ export default function GojekOrderPage() {
           </View>
         </View>
 
-        <TouchableOpacity style={styles.bookingButton} activeOpacity={0.8}>
+        {/* Toggle Tracking Realtime */}
+        <TouchableOpacity
+          style={[styles.trackingButton, trackingEnabled ? styles.trackingOn : styles.trackingOff]}
+          activeOpacity={0.8}
+          onPress={() => setTrackingEnabled((v) => !v)}
+        >
+          <Text style={[styles.trackingText, trackingEnabled ? styles.trackingTextOn : styles.trackingTextOff]}>
+            {trackingEnabled ? 'Tracking: ON' : 'Tracking: OFF'}
+          </Text>
+        </TouchableOpacity>
+
+        {/* Toggle Follow Route */}
+        <TouchableOpacity
+          style={[styles.trackingButton, followRouteEnabled ? styles.trackingOn : styles.trackingOff]}
+          activeOpacity={0.8}
+          onPress={() => {
+            setFollowRouteEnabled((v) => {
+              const next = !v;
+              if (next) {
+                // Matikan tracking agar tidak konflik
+                if (trackingEnabled) setTrackingEnabled(false);
+                restartFollowRoute();
+              } else {
+                stopFollowRoute();
+              }
+              return next;
+            });
+          }}
+        >
+          <Text style={[styles.trackingText, followRouteEnabled ? styles.trackingTextOn : styles.trackingTextOff]}>
+            {followRouteEnabled ? 'Follow Route: ON' : 'Follow Route: OFF'}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.bookingButton}
+          activeOpacity={0.8}
+          onPress={() => {
+            // Collapse sheet hingga mentok bawah saat Booking diklik
+            setSheetTranslateY(SHEET_HIDE);
+          }}
+        >
           <Text style={styles.bookingText}>Booking</Text>
         </TouchableOpacity>
       </View>
@@ -342,6 +627,19 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: -2 },
+    zIndex: 10,
+  },
+  dragHandle: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 6,
+    paddingBottom: 8,
+  },
+  handleBar: {
+    width: 48,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: '#e5e7eb',
   },
   sheetTitle: {
     fontSize: 16,
@@ -431,5 +729,31 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '700',
+  },
+  trackingButton: {
+    height: 40,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    marginTop: 10,
+  },
+  trackingOn: {
+    backgroundColor: '#ecfeff',
+    borderColor: '#06b6d4',
+  },
+  trackingOff: {
+    backgroundColor: '#f8fafc',
+  },
+  trackingText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  trackingTextOn: {
+    color: '#0e7490',
+  },
+  trackingTextOff: {
+    color: '#334155',
   },
 });
