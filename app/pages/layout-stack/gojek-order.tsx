@@ -2,12 +2,15 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function GojekOrderPage() {
-  const [pickup, setPickup] = useState('Lokasi Jemput');
-  const [destination, setDestination] = useState('Tujuan');
-  const [pickupCoords, setPickupCoords] = useState<{ lat: number; lng: number } | null>({ lat: -6.200000, lng: 106.816666 });
-  const [destCoords, setDestCoords] = useState<{ lat: number; lng: number } | null>({ lat: -6.190000, lng: 106.826666 });
+  // Titik default: LKP Naura (ubah koordinat bila diperlukan)
+  const LKP_NAURA = { lat: -6.200000, lng: 106.816666 };
+  const [pickup, setPickup] = useState('');
+  const [destination, setDestination] = useState('');
+  const [pickupCoords, setPickupCoords] = useState<{ lat: number; lng: number } | null>({ lat: LKP_NAURA.lat, lng: LKP_NAURA.lng });
+  const [destCoords, setDestCoords] = useState<{ lat: number; lng: number } | null>({ lat: LKP_NAURA.lat, lng: LKP_NAURA.lng });
   // Detail barang
   const [itemDesc, setItemDesc] = useState('');
   const [itemWeight, setItemWeight] = useState('');
@@ -166,7 +169,7 @@ export default function GojekOrderPage() {
         return;
       }
 
-      const map = L.map('leaflet-map').setView([-6.200000, 106.816666], 13);
+      const map = L.map('leaflet-map').setView([LKP_NAURA.lat, LKP_NAURA.lng], 13);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap contributors',
       }).addTo(map);
@@ -423,8 +426,9 @@ export default function GojekOrderPage() {
 
   // HTML Leaflet untuk perangkat native (WebView)
   const leafletHtml = useMemo(() => {
-    const pick = pickupCoords || { lat: -6.2, lng: 106.816666 };
-    const dest = destCoords || { lat: -6.2, lng: 106.816666 };
+    const defaultCenter = LKP_NAURA;
+    const pick = pickupCoords || defaultCenter;
+    const dest = destCoords || defaultCenter;
     const path = routeLatLngs && routeLatLngs.length > 1
       ? routeLatLngs
       : ([ [pick.lat, pick.lng], [dest.lat, dest.lng] ] as [number, number][]);
@@ -435,7 +439,7 @@ export default function GojekOrderPage() {
       <div id="map"></div>
       <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
       <script>
-        var map = L.map('map').setView([${dest.lat}, ${dest.lng}], 13);
+        var map = L.map('map').setView([${defaultCenter.lat}, ${defaultCenter.lng}], 13);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap contributors' }).addTo(map);
         var greenIcon = new L.Icon({
           iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png',
@@ -490,6 +494,51 @@ export default function GojekOrderPage() {
       }, 0);
     } catch {}
   };
+
+  // Clear helpers untuk input
+  const clearPickup = () => {
+    try {
+      if (pickupDebounceRef.current) { clearTimeout(pickupDebounceRef.current); pickupDebounceRef.current = null; }
+      setPickup('');
+      setPickupSuggestions([]);
+      setShowPickupSuggestions(false);
+      setPickupCoords(null);
+      if (Platform.OS === 'web') {
+        try { if (routeLineRef.current) { routeLineRef.current.remove(); routeLineRef.current = null; } } catch {}
+        const d = (destination || '').trim();
+        if (d.length === 0) {
+          try { if (mapRef.current) mapRef.current.setView([LKP_NAURA.lat, LKP_NAURA.lng], 13, { animate: true }); } catch {}
+        }
+      }
+    } catch {}
+  };
+  const clearDestination = () => {
+    try {
+      if (destDebounceRef.current) { clearTimeout(destDebounceRef.current); destDebounceRef.current = null; }
+      setDestination('');
+      setDestSuggestions([]);
+      setShowDestSuggestions(false);
+      setDestCoords(null);
+      if (Platform.OS === 'web') {
+        try { if (routeLineRef.current) { routeLineRef.current.remove(); routeLineRef.current = null; } } catch {}
+        const p = (pickup || '').trim();
+        if (p.length === 0) {
+          try { if (mapRef.current) mapRef.current.setView([LKP_NAURA.lat, LKP_NAURA.lng], 13, { animate: true }); } catch {}
+        }
+      }
+    } catch {}
+  };
+
+  // Fokuskan peta ke LKP Naura saat kedua input kosong
+  useEffect(() => {
+    const p = (pickup || '').trim();
+    const d = (destination || '').trim();
+    if (p.length === 0 && d.length === 0) {
+      if (Platform.OS === 'web') {
+        try { if (mapRef.current) mapRef.current.setView([LKP_NAURA.lat, LKP_NAURA.lng], 13, { animate: true }); } catch {}
+      }
+    }
+  }, [pickup, destination]);
 
   const formatRupiah = (value: number) => {
     return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(value);
@@ -616,20 +665,27 @@ export default function GojekOrderPage() {
 
         <View style={styles.field}>
           <Text style={styles.label}>Lokasi Jemput</Text>
-          <TextInput
-            value={pickup}
-            onChangeText={setPickup}
-            onBlur={async () => {
-              const coords = await geocodeAddress(pickup);
-              if (coords) setPickupCoords(coords);
-            }}
-            onSubmitEditing={async () => {
-              const coords = await geocodeAddress(pickup);
-              if (coords) setPickupCoords(coords);
-            }}
-            placeholder="Masukkan lokasi jemput"
-            style={styles.input}
-          />
+          <View style={styles.inputRow}>
+            <TextInput
+              value={pickup}
+              onChangeText={setPickup}
+              onBlur={async () => {
+                const coords = await geocodeAddress(pickup);
+                if (coords) setPickupCoords(coords);
+              }}
+              onSubmitEditing={async () => {
+                const coords = await geocodeAddress(pickup);
+                if (coords) setPickupCoords(coords);
+              }}
+              placeholder="Masukkan lokasi jemput"
+              style={[styles.input, styles.inputFlex]}
+            />
+            {pickup.length > 0 && (
+              <TouchableOpacity accessibilityRole="button" style={styles.clearBtn} onPress={clearPickup}>
+                <Ionicons name="close-circle" size={18} color="#64748b" />
+              </TouchableOpacity>
+            )}
+          </View>
           {showPickupSuggestions && pickupSuggestions.length > 0 && (
             <View style={styles.suggestList}>
               {pickupSuggestions.map((s) => (
@@ -645,26 +701,33 @@ export default function GojekOrderPage() {
 
         <View style={styles.field}>
           <Text style={styles.label}>Tujuan</Text>
-          <TextInput
-            value={destination}
-            onChangeText={setDestination}
-            onBlur={async () => {
-              const coords = await geocodeAddress(destination);
-              if (coords) {
-                setDestCoords(coords);
-                setTimeout(focusRoute, 0);
-              }
-            }}
-            onSubmitEditing={async () => {
-              const coords = await geocodeAddress(destination);
-              if (coords) {
-                setDestCoords(coords);
-                setTimeout(focusRoute, 0);
-              }
-            }}
-            placeholder="Masukkan tujuan"
-            style={styles.input}
-          />
+          <View style={styles.inputRow}>
+            <TextInput
+              value={destination}
+              onChangeText={setDestination}
+              onBlur={async () => {
+                const coords = await geocodeAddress(destination);
+                if (coords) {
+                  setDestCoords(coords);
+                  setTimeout(focusRoute, 0);
+                }
+              }}
+              onSubmitEditing={async () => {
+                const coords = await geocodeAddress(destination);
+                if (coords) {
+                  setDestCoords(coords);
+                  setTimeout(focusRoute, 0);
+                }
+              }}
+              placeholder="Masukkan tujuan"
+              style={[styles.input, styles.inputFlex]}
+            />
+            {destination.length > 0 && (
+              <TouchableOpacity accessibilityRole="button" style={styles.clearBtn} onPress={clearDestination}>
+                <Ionicons name="close-circle" size={18} color="#64748b" />
+              </TouchableOpacity>
+            )}
+          </View>
           {showDestSuggestions && destSuggestions.length > 0 && (
             <View style={styles.suggestList}>
               {destSuggestions.map((s) => (
@@ -828,6 +891,20 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 10,
     backgroundColor: '#fff',
+  },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  inputFlex: {
+    flex: 1,
+  },
+  clearBtn: {
+    height: 40,
+    paddingHorizontal: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   suggestList: {
     marginTop: 6,
