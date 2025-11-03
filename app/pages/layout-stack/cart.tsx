@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 type CartItem = {
@@ -26,7 +27,7 @@ export default function CartPage() {
   };
 
   return (
-    <View style={styles.screen}>
+    <SafeAreaView edges={['top']} style={styles.screen}>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.container}>
           <Text style={styles.title}>Keranjang Belanja</Text>
@@ -68,7 +69,7 @@ export default function CartPage() {
           <Text style={styles.checkoutText}>Checkout</Text>
         </TouchableOpacity>
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 

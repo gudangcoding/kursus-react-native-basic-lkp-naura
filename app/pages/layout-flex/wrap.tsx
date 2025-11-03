@@ -1,9 +1,10 @@
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function FlexWrapPage() {
   return (
-    <View style={styles.container}>
+    <SafeAreaView edges={['top']} style={styles.container}>
       <Text style={styles.title}>Flex: Wrap</Text>
       <View style={styles.wrapRow}>
         {Array.from({ length: 12 }).map((_, i) => (
@@ -18,7 +19,7 @@ export default function FlexWrapPage() {
           />
         ))}
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity, TextInput, ScrollView, Modal } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 export default function ProfilePage() {
@@ -9,7 +10,7 @@ export default function ProfilePage() {
   const [modalVisible, setModalVisible] = useState(false);
 
   return (
-    <View style={styles.screen}>
+    <SafeAreaView edges={['top']} style={styles.screen}>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.container}>
           <Text style={styles.title}>Profil</Text>
@@ -85,7 +86,7 @@ export default function ProfilePage() {
           <Text style={styles.updateText}>Update</Text>
         </TouchableOpacity>
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 

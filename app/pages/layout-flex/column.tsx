@@ -1,16 +1,17 @@
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function FlexColumnPage() {
   return (
-    <View style={styles.container}>
+    <SafeAreaView edges={['top']} style={styles.container}>
       <Text style={styles.title}>Flex: Column</Text>
       <View style={styles.column}>
         <View style={[styles.square, styles.blue, styles.mb2]} />
         <View style={[styles.square, styles.amber, styles.mb2]} />
         <View style={[styles.square, styles.emerald]} />
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 

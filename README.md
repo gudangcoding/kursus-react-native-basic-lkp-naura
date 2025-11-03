@@ -21,6 +21,21 @@ Proyek ini adalah latihan membangun antarmuka ala aplikasi sehari‑hari menggun
 3. Buka browser di `http://localhost:8083/`.
 4. Navigasi dari tab “Fragment” untuk membuka halaman‑halaman yang disediakan.
 
+## Perubahan Terbaru (Maps & Autocomplete di Device)
+
+- Memperbaiki bottom‑sheet di halaman Gojek: tombol “Buka Sheet” kini benar‑benar membuka penuh (translateY = 0).
+- Peta kini tampil di perangkat asli (Android/iOS) menggunakan fallback Leaflet di dalam WebView (`react-native-webview`).
+- Autocomplete, geocoding (Nominatim), reverse geocoding, dan routing OSRM tidak lagi dibatasi ke Web — seluruh fitur tersebut aktif juga di device.
+- Dashboard Kurir (segment Waypoint) memiliki fallback TSP: urutan nearest‑neighbor dan penggambaran polyline per segmen via OSRM Route bila OSRM Trip tidak menyediakan geometry.
+- Dependensi baru: `react-native-webview` (dipasang via `npx expo install react-native-webview`).
+ - Warna polyline kini merah dan pin/marker hijau di halaman Gojek serta Waypoint Kurir (konsisten di Web dan device).
+ - Autocomplete untuk Lokasi Jemput (pickup) ditambahkan di halaman Gojek; saran muncul dengan debounce dan batas minimal 5 huruf.
+
+### Menjalankan di Perangkat (Expo Go)
+- Jalankan `npx expo start` untuk menampilkan QR code.
+- Scan QR di Expo Go (Android) atau Camera (iOS) — pastikan perangkat dan komputer berada di jaringan yang sama.
+- Semua fitur peta, autocomplete, dan routing akan berfungsi di device melalui WebView.
+
 ## Struktur Proyek Singkat
 
 - `app/(tabs)/fragment.tsx` — halaman berisi kartu navigasi ke contoh‑contoh
@@ -86,13 +101,61 @@ Proyek ini adalah latihan membangun antarmuka ala aplikasi sehari‑hari menggun
   - Follow Route: tombol “Follow Route: ON/OFF” menggerakkan marker kecil di sepanjang polyline dan kamera mengikuti; aktifnya Follow Route mematikan Tracking otomatis.
 
 ## Catatan Teknis
-
-- Leaflet hanya diaktifkan pada platform Web dan dimuat via CDN.
+- Leaflet aktif di Web (CDN) dan di perangkat asli melalui fallback WebView (`react-native-webview`). Dengan ini, peta tampil konsisten tanpa `react-native-maps`.
 - Nominatim/OSRM adalah layanan publik; rate‑limit atau kegagalan jaringan bisa terjadi.
   - Implementasi memiliki fallback berlapis: (1) rute per segmen via OSRM Route bila geometry Trip tidak tersedia, (2) garis lurus per segmen bila panggilan OSRM gagal.
   - Autocomplete destinasi dibatasi minimal 5 huruf untuk mengurangi beban request; reverse geocoding diberi throttle agar hemat.
 - Geolocation membutuhkan izin browser; ada fallback ke Jakarta bila ditolak.
   - Saat Tracking aktif, Follow Route dimatikan otomatis (dan sebaliknya) agar kamera tidak “berebut”.
+
+### Dependensi Tambahan untuk Device
+- `react-native-webview` dipakai untuk merender Leaflet di perangkat asli.
+  - Pasang dengan: `npx expo install react-native-webview`
+  - Tidak memerlukan konfigurasi native manual di Expo Managed Workflow.
+
+### Catatan Perilaku di Device
+- Autocomplete dan geocoding (Nominatim) serta routing OSRM dipanggil langsung dari device — pastikan koneksi internet tersedia.
+- Bila OSRM/Nominatim tidak dapat diakses, UI tetap menampilkan fallback (polyline lurus per segmen, atau menunda saran autocomplete).
+- Tidak menggunakan `react-native-maps`; seluruh peta berasal dari Leaflet HTML di WebView agar setup tetap sederhana.
+
+## Troubleshooting: Peta/Autocomplete Tidak Tampil di Device
+- Pastikan sudah memasang `react-native-webview`: `npx expo install react-native-webview`.
+- Jalankan `npx expo start` dan scan QR dengan Expo Go; jangan hanya mode Web bila ingin uji di device.
+- Periksa koneksi internet dan akses ke layanan publik:
+  - Nominatim (geocoding): `https://nominatim.openstreetmap.org`
+  - OSRM (routing): endpoint publik/mandiri yang dikonfigurasi di kode.
+- Cek izin lokasi di device; bila ditolak, aplikasi memakai fallback posisi Jakarta agar peta tetap inisialisasi.
+- Bila polyline tidak mengikuti jalan, kemungkinan panggilan OSRM gagal atau mencapai rate‑limit; aplikasi akan menampilkan garis lurus sementara.
+
+### Khusus Autocomplete Nominatim di Device
+- Ketik minimal 5 huruf agar saran muncul (mis. "sudirman", "depok", "bandung").
+- Autocomplete di device memakai `fetch` langsung dari perangkat. Sesuai kebijakan Nominatim, kami menambahkan header berikut agar permintaan tidak ditolak:
+  ```ts
+  fetch(url, {
+    headers: {
+      Accept: 'application/json',
+      Referer: 'https://expo-basic.local',
+      'Accept-Language': 'id',
+    },
+  })
+  ```
+- Pastikan jaringan tidak memblokir akses ke `nominatim.openstreetmap.org` (VPN/Private DNS bisa mempengaruhi).
+- Debounce aktif ±350ms untuk menghemat request; ketikan sangat cepat mungkin menunggu sebentar sebelum saran muncul.
+- Bila saran tidak tampil:
+  - Coba alamat lain yang lebih spesifik (contoh: "Jl. Jend. Sudirman, Jakarta").
+  - Periksa log Expo (DevTools) dan cari error `fetch`/network.
+  - Uji dengan membuka `https://nominatim.openstreetmap.org` di browser perangkat.
+
+### Checklist Koneksi & Konfigurasi Device
+- Komputer dan perangkat berada di jaringan Wi‑Fi yang sama; jika perlu jalankan `npx expo start --host lan`.
+- Tidak ada VPN/Private DNS yang memblokir domain OpenStreetMap/OSRM/Nominatim.
+- Untuk endpoint OSRM kustom, gunakan `https`. Jika memakai `http` pada Android 9+, Anda membutuhkan konfigurasi `cleartext` (tidak tersedia default di Expo Managed) — rekomendasi: pakai `https` agar aman.
+- Jika peta tidak render di device: pastikan komponen yang menampilkan peta adalah WebView (bukan div web) dan `react-native-webview` terpasang.
+
+### Warna Peta & Marker (Verifikasi Visual)
+- Polyline rute berwarna merah (`#ef4444`).
+- Pin/marker pickup, tujuan, dan tiap stop waypoint berwarna hijau.
+- Berlaku sama di Web dan di device (Leaflet di WebView).
 
 ## Cara Uji Cepat
 

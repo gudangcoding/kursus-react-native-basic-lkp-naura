@@ -9,6 +9,15 @@ export default function RootLayout() {
         tabBarActiveTintColor: "#007aff",
       }}
     >
+       <Tabs.Screen
+        name="fragment"
+        options={{
+          title: "Fragment",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="code-slash" size={size} color={color} />
+          ),
+        }}
+      />
       <Tabs.Screen
         name="index"
         options={{
@@ -18,15 +27,7 @@ export default function RootLayout() {
           ),
         }}
       />
-      <Tabs.Screen
-        name="fragment"
-        options={{
-          title: "Fragment",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="code-slash" size={size} color={color} />
-          ),
-        }}
-      />
+     
     </Tabs>
   );
 }

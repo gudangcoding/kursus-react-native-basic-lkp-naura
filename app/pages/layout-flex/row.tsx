@@ -1,9 +1,10 @@
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function FlexRowPage() {
   return (
-    <View style={styles.container}>
+    <SafeAreaView edges={['top']} style={styles.container}>
       <Text style={styles.title}>Flex: Row (justify × align)</Text>
       <View style={styles.grid}>
         {COMBOS.map((c) => (
@@ -17,7 +18,7 @@ export default function FlexRowPage() {
           </View>
         ))}
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 

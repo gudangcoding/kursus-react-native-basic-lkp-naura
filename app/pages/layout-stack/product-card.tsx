@@ -1,10 +1,11 @@
 import React from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 export default function ProductCardPage() {
   return (
-    <View style={styles.container}>
+    <SafeAreaView edges={['top']} style={styles.container}>
       <Text style={styles.title}>Product Card</Text>
 
       <View style={styles.card}>
@@ -38,7 +39,7 @@ export default function ProductCardPage() {
           suara jernih. Cocok untuk bekerja dan hiburan.
         </Text>
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 

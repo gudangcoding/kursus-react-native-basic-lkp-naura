@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 type Step = 1 | 2 | 3;
@@ -54,7 +55,7 @@ export default function OrderKirimBarangWizard() {
   };
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={["top"]}>
       {/* Header Wizard */}
       <View style={styles.header}>
         <Text style={styles.title}>Order Kirim Barang</Text>
@@ -190,7 +191,7 @@ export default function OrderKirimBarangWizard() {
           )}
         </View>
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 

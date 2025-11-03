@@ -1,9 +1,10 @@
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function FlexJustifyPage() {
   return (
-    <View style={styles.container}>
+    <SafeAreaView edges={['top']} style={styles.container}>
       <Text style={styles.title}>Flex: Justify Content</Text>
       <View style={[styles.row, styles.center, styles.spaceBetween]}>
         <View style={[styles.square, styles.blue]} />
@@ -16,7 +17,7 @@ export default function FlexJustifyPage() {
         <View style={[styles.square, styles.violet]} />
         <View style={[styles.square, styles.green]} />
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 

@@ -1,6 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Linking, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { WebView } from 'react-native-webview';
 
 type Task = {
   resi: string;
@@ -42,6 +44,8 @@ export default function DashboardKurir() {
   const tspMarkersRef = useRef<any[]>([]);
   const [tspOrder, setTspOrder] = useState<number[]>([]); // indices of sampleTasks in visit order
   const [isComputingTsp, setIsComputingTsp] = useState(false);
+  const [nativeTspPath, setNativeTspPath] = useState<[number, number][]>([]);
+  const [nativeTspStops, setNativeTspStops] = useState<[number, number][]>([]);
 
   // Waypoint tracking & follow route
   const [tspTrackingEnabled, setTspTrackingEnabled] = useState(false);
@@ -120,7 +124,7 @@ export default function DashboardKurir() {
 
   const geocodeAddress = async (query: string) => {
     try {
-      if (!query || Platform.OS !== 'web') return null;
+      if (!query) return null;
       const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`;
       const res = await fetch(url, { headers: { Accept: 'application/json' } });
       const json = await res.json();
@@ -332,7 +336,54 @@ export default function DashboardKurir() {
 
   // Compute TSP route across all tasks
   const computeTspRoute = async () => {
-    if (Platform.OS !== 'web') return;
+    if (Platform.OS !== 'web') {
+      setIsComputingTsp(true);
+      try {
+        // Titik awal default Jakarta
+        let start: { lat: number; lng: number } = { lat: -6.2, lng: 106.816666 };
+        // Geocode semua alamat tugas
+        const geos = await Promise.all(sampleTasks.map((t) => geocodeAddress(t.alamat)));
+        const taskCoords: { lat: number; lng: number }[] = geos.map((g, i) => g || { lat: -6.2 + i * 0.01, lng: 106.816666 + i * 0.01 });
+        // Nearest-neighbor sederhana untuk urutan kunjungan
+        let remaining = taskCoords.map((_, idx) => idx);
+        let order: number[] = [];
+        let currentCoord = start;
+        while (remaining.length > 0) {
+          let bestIdx = -1;
+          let bestDist = Number.POSITIVE_INFINITY;
+          for (let i = 0; i < remaining.length; i++) {
+            const candIdx = remaining[i];
+            const cand = taskCoords[candIdx];
+            const d = Math.hypot(cand.lat - currentCoord.lat, cand.lng - currentCoord.lng);
+            if (d < bestDist) { bestDist = d; bestIdx = i; }
+          }
+          const next = remaining.splice(bestIdx, 1)[0];
+          order.push(next);
+          currentCoord = taskCoords[next];
+        }
+        // Bangun polyline: dari start, melalui order
+        let latlngs: [number, number][] = [];
+        let prev = start;
+        for (const idx of order) {
+          const to = taskCoords[idx];
+          const seg = await fetchOsrmRouteLatLngs(prev, to);
+          if (seg && seg.length > 1) latlngs = latlngs.concat(seg);
+          else latlngs.push([prev.lat, prev.lng], [to.lat, to.lng]);
+          prev = to;
+        }
+        const stops: [number, number][] = [[start.lat, start.lng], ...order.map((i) => [taskCoords[i].lat, taskCoords[i].lng])];
+        setNativeTspPath(latlngs.length >= 2 ? latlngs : [[start.lat, start.lng]]);
+        setNativeTspStops(stops);
+        setTspOrder(order);
+      } catch (e) {
+        setTspOrder([]);
+        setNativeTspPath([]);
+        setNativeTspStops([]);
+      } finally {
+        setIsComputingTsp(false);
+      }
+      return;
+    }
     setIsComputingTsp(true);
     try {
       // 1) Determine origin from geolocation
@@ -405,8 +456,9 @@ export default function DashboardKurir() {
       if (tspMapRef.current && L && latlngs && latlngs.length >= 2) {
         if (tspPolylineRef.current) {
           tspPolylineRef.current.setLatLngs(latlngs);
+          try { tspPolylineRef.current.setStyle({ color: '#ef4444', weight: 5 }); } catch {}
         } else {
-          tspPolylineRef.current = L.polyline(latlngs, { color: '#7c3aed', weight: 5 }).addTo(tspMapRef.current);
+          tspPolylineRef.current = L.polyline(latlngs, { color: '#ef4444', weight: 5 }).addTo(tspMapRef.current);
         }
         // cache route latlngs for follow animation
         tspRouteLatLngsRef.current = latlngs as [number, number][];
@@ -421,15 +473,24 @@ export default function DashboardKurir() {
       tspMarkersRef.current = [];
 
       if (tspMapRef.current && L) {
+        const greenIcon = new L.Icon({
+          iconUrl: 'https://unpkg.com/leaflet-color-markers@1.5.0/img/marker-icon-green.png',
+          iconRetinaUrl: 'https://unpkg.com/leaflet-color-markers@1.5.0/img/marker-icon-2x-green.png',
+          shadowUrl: 'https://unpkg.com/leaflet-color-markers@1.5.0/img/marker-shadow.png',
+          iconSize: [25, 41],
+          iconAnchor: [12, 41],
+          popupAnchor: [1, -34],
+          shadowSize: [41, 41],
+        });
         // Start marker
-        const startM = L.marker([start.lat, start.lng]).addTo(tspMapRef.current);
+        const startM = L.marker([start.lat, start.lng], { icon: greenIcon }).addTo(tspMapRef.current);
         startM.bindPopup('Start');
         tspMarkersRef.current.push(startM);
 
         // Task markers in order
         order.forEach((idx, i) => {
           const c = taskCoords[idx];
-          const m = L.marker([c.lat, c.lng]).addTo(tspMapRef.current);
+          const m = L.marker([c.lat, c.lng], { icon: greenIcon }).addTo(tspMapRef.current);
           const label = i === order.length - 1 ? 'End' : `${i + 1}`;
           m.bindPopup(label);
           tspMarkersRef.current.push(m);
@@ -443,6 +504,40 @@ export default function DashboardKurir() {
       setIsComputingTsp(false);
     }
   };
+
+  // HTML Leaflet untuk perangkat native (WebView) pada segmen waypoint
+  const tspHtml = useMemo(() => {
+    const path = nativeTspPath && nativeTspPath.length > 0 ? nativeTspPath : [[-6.2, 106.816666]];
+    const stops = nativeTspStops && nativeTspStops.length > 0 ? nativeTspStops : [[-6.2, 106.816666]];
+    return `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1" />
+      <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+      <style>html,body,#map{height:100%;margin:0;padding:0}</style>
+      </head><body>
+      <div id="map"></div>
+      <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+      <script>
+        var map = L.map('map').setView(${JSON.stringify(stops[0])}, 12);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap contributors' }).addTo(map);
+        var line = L.polyline(${JSON.stringify(path)}, { color: '#ef4444', weight: 5 }).addTo(map);
+        var greenIcon = new L.Icon({
+          iconUrl: 'https://unpkg.com/leaflet-color-markers@1.5.0/img/marker-icon-green.png',
+          iconRetinaUrl: 'https://unpkg.com/leaflet-color-markers@1.5.0/img/marker-icon-2x-green.png',
+          shadowUrl: 'https://unpkg.com/leaflet-color-markers@1.5.0/img/marker-shadow.png',
+          iconSize: [25, 41],
+          iconAnchor: [12, 41],
+          popupAnchor: [1, -34],
+          shadowSize: [41, 41],
+        });
+        try { map.fitBounds(line.getBounds(), { padding: [20, 20] }); } catch(e) {}
+        try {
+          ${'${'}JSON.stringify(stops)${'}'}.forEach(function(ll, i){
+            var m = L.marker(ll, { icon: greenIcon }).addTo(map);
+            m.bindPopup(i === (${stops.length} - 1) ? 'End' : (i === 0 ? 'Start' : String(i)));
+          });
+        } catch(e) {}
+      </script>
+      </body></html>`;
+  }, [nativeTspPath, nativeTspStops]);
 
   // Follow Route helpers for Waypoint
   const stopTspFollow = () => {
@@ -550,7 +645,7 @@ export default function DashboardKurir() {
   }, [segment]);
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.header}>
         <Text style={styles.title}>Dashboard Kurir</Text>
         <Text style={styles.subtitle}>Tugas Hari Ini</Text>
@@ -761,7 +856,11 @@ export default function DashboardKurir() {
               </Text>
             </TouchableOpacity>
           </View>
-          <View nativeID="leaflet-map-tsp" style={styles.tspMap} />
+          {Platform.OS === 'web' ? (
+            <View nativeID="leaflet-map-tsp" style={styles.tspMap} />
+          ) : (
+            <WebView style={styles.tspMap} source={{ html: tspHtml }} />
+          )}
           <View style={styles.tspOrderWrap}>
             <Text style={styles.tspOrderTitle}>Urutan Kunjungan</Text>
             {tspOrder.length === 0 ? (
@@ -847,7 +946,7 @@ export default function DashboardKurir() {
           <View nativeID="leaflet-map-kurir" style={styles.map} />
         </View>
       )}
-    </View>
+    </SafeAreaView>
   );
 }
 

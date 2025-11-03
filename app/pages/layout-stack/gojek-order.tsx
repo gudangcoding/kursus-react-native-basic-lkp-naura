@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, Platform } from 'react-native';
+import { Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { WebView } from 'react-native-webview';
 
 export default function GojekOrderPage() {
   const [pickup, setPickup] = useState('Lokasi Jemput');
@@ -14,6 +16,10 @@ export default function GojekOrderPage() {
   const [destSuggestions, setDestSuggestions] = useState<Array<{ title: string; lat: number; lng: number }>>([]);
   const [showDestSuggestions, setShowDestSuggestions] = useState(false);
   const destDebounceRef = useRef<any>(null);
+  // Autocomplete lokasi jemput
+  const [pickupSuggestions, setPickupSuggestions] = useState<Array<{ title: string; lat: number; lng: number }>>([]);
+  const [showPickupSuggestions, setShowPickupSuggestions] = useState(false);
+  const pickupDebounceRef = useRef<any>(null);
 
   const mapRef = useRef<any>(null);
   const pickupMarkerRef = useRef<any>(null);
@@ -24,6 +30,7 @@ export default function GojekOrderPage() {
   const [trackingEnabled, setTrackingEnabled] = useState(false);
   const [followRouteEnabled, setFollowRouteEnabled] = useState(false);
   const routeCoordsRef = useRef<[number, number][]>([]);
+  const [routeLatLngs, setRouteLatLngs] = useState<[number, number][]>([]);
   const followTimerRef = useRef<any>(null);
   const followIdxRef = useRef<number>(0);
   const routeFollowerMarkerRef = useRef<any>(null);
@@ -59,7 +66,6 @@ export default function GojekOrderPage() {
   // Reverse geocoding: koordinat -> alamat (display_name)
   const reverseGeocode = async (c: { lat: number; lng: number }) => {
     try {
-      if (Platform.OS !== 'web') return null;
       const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${c.lat}&lon=${c.lng}`;
       const res = await fetch(url, { headers: { Accept: 'application/json' } });
       const json = await res.json();
@@ -73,7 +79,6 @@ export default function GojekOrderPage() {
   // Ambil rute jalan dari OSRM Route API (di dalam komponen agar akses mapRef & state)
   const fetchOsrmRoute = async (from: { lat: number; lng: number }, to: { lat: number; lng: number }) => {
     try {
-      if (Platform.OS !== 'web') return null;
       const url = `https://router.project-osrm.org/route/v1/driving/${from.lng},${from.lat};${to.lng},${to.lat}?overview=full&geometries=geojson&alternatives=false&steps=false`;
       const res = await fetch(url, { headers: { Accept: 'application/json' } });
       if (!res.ok) return null;
@@ -105,13 +110,14 @@ export default function GojekOrderPage() {
           routeLineRef.current.setLatLngs(straight);
           routeCoordsRef.current = straight;
         }
+        try { routeLineRef.current.setStyle({ color: 'red', weight: 4 }); } catch {}
         try { mapRef.current.fitBounds(routeLineRef.current.getBounds(), { padding: [20, 20] }); } catch {}
         if (followRouteEnabled) {
           restartFollowRoute();
         }
       } else {
         const initial = latlngs && latlngs.length > 1 ? latlngs : [[pickupCoords.lat, pickupCoords.lng], [destCoords.lat, destCoords.lng]];
-        const line = L.polyline(initial, { color: '#10b981', weight: 4 }).addTo(mapRef.current);
+        const line = L.polyline(initial, { color: 'red', weight: 4 }).addTo(mapRef.current);
         routeLineRef.current = line;
         routeCoordsRef.current = initial as [number, number][];
         try { mapRef.current.fitBounds(line.getBounds(), { padding: [20, 20] }); } catch {}
@@ -165,8 +171,19 @@ export default function GojekOrderPage() {
         attribution: '© OpenStreetMap contributors',
       }).addTo(map);
 
+      // Define green marker icon
+      const greenIcon = new L.Icon({
+        iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png',
+        iconRetinaUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
+        shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+        iconSize: [25, 41],
+        iconAnchor: [12, 41],
+        popupAnchor: [1, -34],
+        shadowSize: [41, 41],
+      });
+
       // Pickup marker (draggable)
-      const pick = L.marker([pickupCoords!.lat, pickupCoords!.lng], { draggable: true }).addTo(map);
+      const pick = L.marker([pickupCoords!.lat, pickupCoords!.lng], { draggable: true, icon: greenIcon }).addTo(map);
       pick.bindPopup('Lokasi Jemput');
       pick.on('dragend', () => {
         const ll = pick.getLatLng();
@@ -179,7 +196,7 @@ export default function GojekOrderPage() {
       });
 
       // Destination marker (draggable)
-      const dest = L.marker([destCoords!.lat, destCoords!.lng], { draggable: true }).addTo(map);
+      const dest = L.marker([destCoords!.lat, destCoords!.lng], { draggable: true, icon: greenIcon }).addTo(map);
       dest.bindPopup('Tujuan');
       dest.on('dragend', () => {
         const ll = dest.getLatLng();
@@ -205,7 +222,7 @@ export default function GojekOrderPage() {
       (async () => {
         const latlngs = await fetchOsrmRoute(pickupCoords!, destCoords!);
         const initial = latlngs && latlngs.length > 1 ? latlngs : [[pickupCoords!.lat, pickupCoords!.lng], [destCoords!.lat, destCoords!.lng]];
-        const line = L.polyline(initial, { color: '#10b981', weight: 4 }).addTo(map);
+        const line = L.polyline(initial, { color: 'red', weight: 4 }).addTo(map);
         routeLineRef.current = line;
         routeCoordsRef.current = initial as [number, number][];
         try { map.fitBounds(line.getBounds(), { padding: [20, 20] }); } catch {}
@@ -308,16 +325,36 @@ export default function GojekOrderPage() {
     }
   }, [pickupCoords, destCoords]);
 
+  // Komputasi rute untuk perangkat native (WebView akan memakai hasilnya)
+  useEffect(() => {
+    if (!pickupCoords || !destCoords) return;
+    (async () => {
+      try {
+        const latlngs = await fetchOsrmRoute(pickupCoords, destCoords);
+        const path = latlngs && latlngs.length > 1
+          ? latlngs
+          : ([ [pickupCoords.lat, pickupCoords.lng], [destCoords.lat, destCoords.lng] ] as [number, number][]);
+        setRouteLatLngs(path);
+      } catch {
+        setRouteLatLngs([ [pickupCoords.lat, pickupCoords.lng], [destCoords.lat, destCoords.lng] ] as [number, number][]);
+      }
+    })();
+  }, [pickupCoords, destCoords]);
+
   // Geocoding address → koordinat menggunakan Nominatim
+  // Headers untuk Nominatim agar permintaan dari device tidak diblokir
+  const nominatimHeaders: Record<string, string> = {
+    Accept: 'application/json',
+    // Beberapa server memerlukan identitas; Referer membantu di RN
+    Referer: 'https://expo-basic.local',
+    'Accept-Language': 'id',
+  };
+
   const geocodeAddress = async (query: string) => {
     try {
-      if (!query || Platform.OS !== 'web') return null;
+      if (!query) return null;
       const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&addressdetails=1`;
-      const res = await fetch(url, {
-        headers: {
-          'Accept': 'application/json',
-        },
-      });
+      const res = await fetch(url, { headers: nominatimHeaders });
       const json = await res.json();
       if (Array.isArray(json) && json.length > 0) {
         const first = json[0];
@@ -331,7 +368,6 @@ export default function GojekOrderPage() {
 
   // Autocomplete destinasi: ambil saran dari Nominatim saat mengetik
   useEffect(() => {
-    if (Platform.OS !== 'web') return;
     if (destDebounceRef.current) clearTimeout(destDebounceRef.current);
     const q = (destination || '').trim();
     // Minimal 5 huruf sebelum memunculkan saran
@@ -343,7 +379,7 @@ export default function GojekOrderPage() {
     destDebounceRef.current = setTimeout(async () => {
       try {
         const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5&addressdetails=1`;
-        const res = await fetch(url, { headers: { Accept: 'application/json' } });
+        const res = await fetch(url, { headers: nominatimHeaders });
         const json = await res.json();
         const items: Array<{ title: string; lat: number; lng: number }> = Array.isArray(json)
           ? json.map((it: any) => ({ title: it.display_name, lat: parseFloat(it.lat), lng: parseFloat(it.lon) }))
@@ -357,6 +393,64 @@ export default function GojekOrderPage() {
     }, 350);
     return () => destDebounceRef.current && clearTimeout(destDebounceRef.current);
   }, [destination]);
+
+  // Autocomplete lokasi jemput: ambil saran dari Nominatim saat mengetik
+  useEffect(() => {
+    if (pickupDebounceRef.current) clearTimeout(pickupDebounceRef.current);
+    const q = (pickup || '').trim();
+    if (q.length < 5) {
+      setPickupSuggestions([]);
+      setShowPickupSuggestions(false);
+      return;
+    }
+    pickupDebounceRef.current = setTimeout(async () => {
+      try {
+        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5&addressdetails=1`;
+        const res = await fetch(url, { headers: nominatimHeaders });
+        const json = await res.json();
+        const items: Array<{ title: string; lat: number; lng: number }> = Array.isArray(json)
+          ? json.map((it: any) => ({ title: it.display_name, lat: parseFloat(it.lat), lng: parseFloat(it.lon) }))
+          : [];
+        setPickupSuggestions(items);
+        setShowPickupSuggestions(items.length > 0);
+      } catch (e) {
+        setPickupSuggestions([]);
+        setShowPickupSuggestions(false);
+      }
+    }, 350);
+    return () => pickupDebounceRef.current && clearTimeout(pickupDebounceRef.current);
+  }, [pickup]);
+
+  // HTML Leaflet untuk perangkat native (WebView)
+  const leafletHtml = useMemo(() => {
+    const pick = pickupCoords || { lat: -6.2, lng: 106.816666 };
+    const dest = destCoords || { lat: -6.2, lng: 106.816666 };
+    const path = routeLatLngs && routeLatLngs.length > 1
+      ? routeLatLngs
+      : ([ [pick.lat, pick.lng], [dest.lat, dest.lng] ] as [number, number][]);
+    return `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1" />
+      <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+      <style>html,body,#map{height:100%;margin:0;padding:0}</style>
+      </head><body>
+      <div id="map"></div>
+      <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+      <script>
+        var map = L.map('map').setView([${dest.lat}, ${dest.lng}], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap contributors' }).addTo(map);
+        var greenIcon = new L.Icon({
+          iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png',
+          iconRetinaUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
+          shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+          iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
+        });
+        L.marker([${pick.lat}, ${pick.lng}], { icon: greenIcon }).addTo(map).bindPopup('Jemput');
+        L.marker([${dest.lat}, ${dest.lng}], { icon: greenIcon }).addTo(map).bindPopup('Tujuan');
+        var latlngs = ${JSON.stringify(path)};
+        var line = L.polyline(latlngs, { color: 'red', weight: 4 }).addTo(map);
+        try { map.fitBounds(line.getBounds(), { padding: [20, 20] }); } catch(e) {}
+      </script>
+      </body></html>`;
+  }, [pickupCoords, destCoords, routeLatLngs]);
 
   const selectDestSuggestion = (s: { title: string; lat: number; lng: number }) => {
     try {
@@ -373,6 +467,23 @@ export default function GojekOrderPage() {
       setDestCoords({ lat: s.lat, lng: s.lng });
 
       // Setelah state ter-update, fokuskan peta dan perbarui rute jalan
+      setTimeout(() => {
+        updateRoadRoute();
+        focusRoute();
+      }, 0);
+    } catch {}
+  };
+
+  const selectPickupSuggestion = (s: { title: string; lat: number; lng: number }) => {
+    try {
+      if (pickupDebounceRef.current) {
+        clearTimeout(pickupDebounceRef.current);
+        pickupDebounceRef.current = null;
+      }
+      setShowPickupSuggestions(false);
+      setPickupSuggestions([]);
+      setPickup(s.title);
+      setPickupCoords({ lat: s.lat, lng: s.lng });
       setTimeout(() => {
         updateRoadRoute();
         focusRoute();
@@ -450,9 +561,13 @@ export default function GojekOrderPage() {
   }, [trackingEnabled]);
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView edges={['top']} style={styles.container}>
       {/* Peta full-screen di belakang */}
-      <View style={styles.map} nativeID="leaflet-map" />
+      {Platform.OS === 'web' ? (
+        <View style={styles.map} nativeID="leaflet-map" />
+      ) : (
+        <WebView style={styles.map} source={{ html: leafletHtml }} />
+      )}
 
       {/* Bottom sheet fixed berisi form, estimasi, dan tombol booking */}
       <View
@@ -515,29 +630,18 @@ export default function GojekOrderPage() {
             placeholder="Masukkan lokasi jemput"
             style={styles.input}
           />
+          {showPickupSuggestions && pickupSuggestions.length > 0 && (
+            <View style={styles.suggestList}>
+              {pickupSuggestions.map((s) => (
+                <TouchableOpacity key={`${s.title}-${s.lat}-${s.lng}`} style={styles.suggestItem} onPress={() => { selectPickupSuggestion(s); }}>
+                  <Text style={styles.suggestTitle} numberOfLines={2}>{s.title}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
         </View>
 
-        {/* Detail Barang */}
-        <View style={styles.field}>
-          <Text style={styles.label}>Deskripsi Barang</Text>
-          <TextInput
-            value={itemDesc}
-            onChangeText={setItemDesc}
-            placeholder="Contoh: Dokumen, pakaian, makanan"
-            style={styles.input}
-          />
-        </View>
-
-        <View style={styles.field}>
-          <Text style={styles.label}>Berat (kg)</Text>
-          <TextInput
-            value={itemWeight}
-            onChangeText={setItemWeight}
-            placeholder="Misal: 1.5"
-            style={styles.input}
-            keyboardType="numeric"
-          />
-        </View>
+        
 
         <View style={styles.field}>
           <Text style={styles.label}>Tujuan</Text>
@@ -633,12 +737,12 @@ export default function GojekOrderPage() {
         <TouchableOpacity
           style={styles.openSheetBtn}
           activeOpacity={0.85}
-          onPress={() => setSheetTranslateY(SHEET_COLLAPSE)}
+          onPress={() => setSheetTranslateY(0)}
         >
           <Text style={styles.openSheetText}>Buka Sheet</Text>
         </TouchableOpacity>
       )}
-    </View>
+    </SafeAreaView>
   );
 }
 

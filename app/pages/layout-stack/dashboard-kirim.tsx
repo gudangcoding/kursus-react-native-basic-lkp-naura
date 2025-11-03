@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Platform, Linking } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 type ShipmentStatus = 'pending' | 'in_transit' | 'delivered';
@@ -201,7 +202,7 @@ export default function DashboardKirimBarang() {
   }, [tspOrder]);
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView edges={['top']} style={styles.container}>
       {/* Segmented control */}
       <View style={styles.segmentRow}>
         <TouchableOpacity style={[styles.segmentBtn, segment === 'list' ? styles.segmentActive : styles.segmentInactive]} onPress={() => setSegment('list')}>
@@ -398,7 +399,7 @@ export default function DashboardKirimBarang() {
           </View>
         </View>
       )}
-    </View>
+    </SafeAreaView>
   );
 }
 

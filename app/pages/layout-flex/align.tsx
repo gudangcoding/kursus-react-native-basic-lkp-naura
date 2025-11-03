@@ -1,9 +1,10 @@
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function FlexAlignPage() {
   return (
-    <View style={styles.container}>
+    <SafeAreaView edges={['top']} style={styles.container}>
       <Text style={styles.title}>Flex: Align Items</Text>
       <View style={[styles.row, styles.box, styles.itemsCenter, styles.spaceBetween]}>
         <View style={[styles.square, styles.blue]} />
@@ -16,7 +17,7 @@ export default function FlexAlignPage() {
         <View style={[styles.square, styles.violet]} />
         <View style={[styles.square, styles.green]} />
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 

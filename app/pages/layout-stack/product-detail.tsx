@@ -1,21 +1,28 @@
 import React from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView } from 'react-native';
+import { useRouter } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 export default function ProductDetailPage() {
+  const router = useRouter();
   return (
-    <View style={styles.screen}>
+    <SafeAreaView edges={['top']} style={styles.screen}>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.container}>
-          <Text style={styles.title}>Product Detail</Text>
-
-          <View style={styles.heroWrap}>
-            <Image
-              source={require('../../../assets/images/react-logo.png')}
-              style={styles.hero}
-              resizeMode="cover"
-            />
+          {/* Header transparan dengan tombol kembali */}
+          <View style={[styles.topOverlay, { top: 8 }]}>
+            <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+              <Ionicons name="chevron-back" size={22} color="#111827" />
+            </TouchableOpacity>
           </View>
+
+          {/* Gambar penuh hingga top */}
+          <Image
+            source={require('../../../assets/images/react-logo.png')}
+            style={styles.hero}
+            resizeMode="cover"
+          />
 
           <View style={styles.infoRow}>
             <View style={styles.leftInfo}>
@@ -29,7 +36,6 @@ export default function ProductDetailPage() {
               <Ionicons name="bookmark" size={18} color="#6b7280" />
             </View>
           </View>
-
           <Text style={styles.productName}>Headphone Wireless Pro</Text>
           {/* Deskripsi panjang (5 paragraf) untuk uji scroll/overlay */}
           <Text style={styles.desc}>
@@ -61,24 +67,25 @@ export default function ProductDetailPage() {
           <Text style={styles.actionText}>Keranjang</Text>
         </TouchableOpacity>
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1 },
+  screen: { flex: 1, backgroundColor: '#fff' },
   content: { paddingBottom: 120 },
-  container: { flex: 1, padding: 16, paddingTop: 48 },
-  title: { fontSize: 24, fontWeight: 'bold', marginBottom: 16 },
-  productName: { fontSize: 18, fontWeight: '700', marginBottom: 8 },
-  heroWrap: { borderTopLeftRadius: 16, borderTopRightRadius: 16, overflow: 'hidden' },
-  hero: { width: '100%', height: 200 },
+  container: { flex: 1 },
+  topOverlay: { position: 'absolute', top: 8, left: 8, right: 8, zIndex: 10 },
+  backBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.9)', alignItems: 'center', justifyContent: 'center' },
+  productName: { fontSize: 18, fontWeight: '700', marginTop: 12, marginHorizontal: 16 },
+  hero: { width: '100%', height: 280 },
   desc: { color: '#4b5563', marginTop: 12 },
   infoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginTop: 12,
+    paddingHorizontal: 16,
   },
   leftInfo: { flexDirection: 'row', alignItems: 'center' },
   price: { fontSize: 18, fontWeight: '700', marginRight: 12 },
