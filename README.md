@@ -163,6 +163,129 @@ Proyek ini adalah latihan membangun antarmuka ala aplikasi sehari‑hari menggun
 - Gojek Order:
   - Geser marker untuk melihat alamat otomatis (reverse geocoding) dan jarak Haversine.
   - Ketik destinasi ≥ 5 huruf untuk melihat saran autocomplete; pilih satu untuk menggambar rute jalan OSRM.
+
+## Komponen Reusable: Dropdown Pencarian (≥3) & Foto Picker
+
+### Dropdown dengan Pencarian (Ketik ≥ 3 karakter)
+- Rekomendasi plugin: `react-native-element-dropdown`
+  - Cocok untuk Expo/React Native, mendukung mode `search` dengan input pencarian terintegrasi.
+  - Instalasi:
+    ```bash
+    npm install react-native-element-dropdown
+    ```
+  - Contoh penggunaan dengan ambang minimal 3 karakter (menyembunyikan hasil bila < 3):
+    ```tsx
+    import { Dropdown } from 'react-native-element-dropdown';
+    import React, { useMemo, useState } from 'react';
+    import { View } from 'react-native';
+
+    const options = [
+      { label: 'Baju', value: 'baju' },
+      { label: 'Sepatu', value: 'sepatu' },
+      { label: 'Tas', value: 'tas' },
+    ];
+
+    export default function SearchableDropdownExample() {
+      const [selected, setSelected] = useState<string | null>(null);
+      const [query, setQuery] = useState('');
+      const filtered = useMemo(() => {
+        if ((query || '').trim().length < 3) return [];
+        return options.filter(o => o.label.toLowerCase().includes(query.toLowerCase()));
+      }, [query]);
+
+      return (
+        <View>
+          <Dropdown
+            data={filtered}
+            labelField="label"
+            valueField="value"
+            value={selected}
+            placeholder="Pilih..."
+            search
+            searchPlaceholder="Ketik minimal 3..."
+            onChangeText={(text) => setQuery(text)}
+            onChange={(item) => setSelected(item.value)}
+          />
+        </View>
+      );
+    }
+    ```
+- Alternatif: `react-native-dropdown-picker`
+  - Mendukung `searchable` dan dapat dikombinasikan dengan logika lokal untuk batas minimal karakter.
+  - Instalasi: `npm install react-native-dropdown-picker`
+  - Gunakan `searchable={true}` dan kontrol daftar dengan filter berbasis panjang input (≥3).
+
+Catatan: Bila benar‑benar mengharuskan “≥3 kata” (bukan karakter), ubah logika menjadi menghitung jumlah kata pada `query.split(/\s+/).filter(Boolean).length >= 3`.
+
+### Form Foto Picker (Modal: Kamera atau Galeri)
+- Rekomendasi paket: `expo-image-picker` (galeri & kamera) dan opsi `expo-camera` bila butuh kontrol kamera lanjutan.
+- Instalasi:
+  ```bash
+  npx expo install expo-image-picker expo-camera
+  ```
+- Contoh penggunaan dengan modal pilihan “Kamera” atau “Galeri” dan perizinan:
+  ```tsx
+  import * as ImagePicker from 'expo-image-picker';
+  import React, { useState } from 'react';
+  import { View, Text, Image, Modal, TouchableOpacity } from 'react-native';
+
+  export default function PhotoPickerExample() {
+    const [uri, setUri] = useState<string | null>(null);
+    const [open, setOpen] = useState(false);
+
+    const pickFromGallery = async () => {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) return;
+      const res = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.8,
+      });
+      if (!res.canceled) setUri(res.assets[0].uri);
+      setOpen(false);
+    };
+
+    const pickFromCamera = async () => {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) return;
+      const res = await ImagePicker.launchCameraAsync({
+        quality: 0.8,
+      });
+      if (!res.canceled) setUri(res.assets[0].uri);
+      setOpen(false);
+    };
+
+    return (
+      <View>
+        <TouchableOpacity onPress={() => setOpen(true)} style={{ backgroundColor: '#0ea5e9', padding: 12, borderRadius: 8 }}>
+          <Text style={{ color: '#fff', fontWeight: '600' }}>Pilih Foto</Text>
+        </TouchableOpacity>
+        {uri ? <Image source={{ uri }} style={{ width: 200, height: 200, marginTop: 12, borderRadius: 12 }} /> : null}
+
+        <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', padding: 24 }}>
+            <View style={{ backgroundColor: '#fff', borderRadius: 12, padding: 16 }}>
+              <Text style={{ fontWeight: '700', fontSize: 16, marginBottom: 12 }}>Ambil dari:</Text>
+              <TouchableOpacity onPress={pickFromCamera} style={{ paddingVertical: 12 }}>
+                <Text>Kamera</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={pickFromGallery} style={{ paddingVertical: 12 }}>
+                <Text>Galeri</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setOpen(false)} style={{ paddingVertical: 12 }}>
+                <Text>Batal</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      </View>
+    );
+  }
+  ```
+- Perizinan & Catatan Platform:
+  - Android/iOS akan meminta izin kamera/galeri saat runtime; pastikan mengizinkan.
+  - Web: `expo-image-picker` menggunakan `<input type="file">`; opsi kamera tergantung dukungan browser/perangkat.
+  - Untuk kontrol kamera lebih lanjut (flash, fokus, dsb.), gunakan `expo-camera` dan antarmuka kamera khusus.
+
   - Coba “Follow Route: ON” untuk animasi mengikuti rute; “Tracking: ON” untuk mengikuti posisi perangkat (aktif salah satu saja).
 - Dashboard Kurir → Waypoint:
   - Tekan “Hitung Ulang” untuk membentuk rute; periksa apakah polyline mengikuti jalan.

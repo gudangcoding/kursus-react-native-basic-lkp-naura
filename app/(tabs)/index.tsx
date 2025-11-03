@@ -15,6 +15,12 @@ export default function KomponenScreen() {
           { label: 'Email', icon: 'mail', href: '/pages/email' },
           { label: 'Password', icon: 'lock-closed', href: '/pages/password' },
           { label: 'Telepon', icon: 'call', href: '/pages/telepon' },
+          // Reusable forms baru (semua masuk ke halaman demo komponen)
+          { label: 'Tanggal', icon: 'calendar', href: '/pages/layout-stack/date-input-demo' },
+          { label: 'Waktu', icon: 'time', href: '/pages/layout-stack/time-input-demo' },
+          { label: 'OTP', icon: 'keypad', href: '/pages/layout-stack/otp-input-demo' },
+          { label: 'Search', icon: 'search', href: '/pages/layout-stack/searchbar-demo' },
+          { label: 'Dropdown', icon: 'funnel', href: '/pages/layout-stack/dropdown-demo' },
         ].map((item) => (
           <Link key={item.label} href={item.href} asChild>
             <TouchableOpacity

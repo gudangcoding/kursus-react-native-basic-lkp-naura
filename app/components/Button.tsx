@@ -5,15 +5,27 @@ type ButtonProps = {
   label: string;
   onPress?: () => void;
   color?: string;
+  variant?: 'full' | 'fixedBottom' | 'medium' | 'small';
 };
 
-export default function Button({ label, onPress, color = '#007AFF' }: ButtonProps) {
+export default function Button({ label, onPress, color = '#007AFF', variant = 'medium' }: ButtonProps) {
+  const containerStyle = [styles.button, { backgroundColor: color }];
+  const textStyle = [styles.text];
+
+  if (variant === 'full') {
+    containerStyle.push({ alignSelf: 'stretch' });
+  }
+  if (variant === 'small') {
+    containerStyle.push({ paddingVertical: 8, paddingHorizontal: 16 });
+    textStyle.push({ fontSize: 14 });
+  }
+  if (variant === 'fixedBottom') {
+    containerStyle.push({ position: 'absolute', left: 0, right: 0, bottom: 0, margin: 12 });
+  }
+
   return (
-    <TouchableOpacity
-      style={[styles.button, { backgroundColor: color }]}
-      onPress={onPress}
-    >
-      <Text style={styles.text}>{label}</Text>
+    <TouchableOpacity style={containerStyle} onPress={onPress}>
+      <Text style={textStyle as any}>{label}</Text>
     </TouchableOpacity>
   );
 }
